@@ -1,0 +1,95 @@
+\input texinfo   @c -*-texinfo-*-
+@c %**start of header
+@setfilename maxbutt.info
+@settitle Maxbutt User Manual
+@c %**end of header
+
+@set EDITION Maxbutt SSB
+@set UPDATED $Date: 2005/02/20 22:10:15 $
+@set VERSION SSB
+
+@titlepage
+@title Maxbutt User Manual
+@subtitle @value{EDITION}, updated @value{UPDATED}
+@author Charles Moid
+@end titlepage
+
+@dircategory Emacs
+@direntry
+* Maxbutt: (maxbutt).             Secure Scuttlebutt client.
+@end direntry
+
+@c @setchapternewpage off
+
+@contents
+
+@node Top, Introduction, (dir), (dir)
+@comment  node-name,  next,  previous,  up
+
+@noindent
+
+@ifinfo
+This is the user manual for Maxbutt.
+@end ifinfo
+
+@menu
+* Introduction::                
+* Erlbutt::            
+* Commands::                
+
+@detailmenu
+ --- The Detailed Node Listing ---
+
+Introduction
+
+* History::                     How we got here.
+* Goals::                       What we hope to accomplish.
+
+Erlbutt
+
+* SSB-Server::                  Scuttlebutt implementation.
+* BEAM::                        Foundation on Distel.
+
+Commands
+
+@end detailmenu
+@end menu
+
+@node Introduction, Erlbutt, Top, Top
+@chapter Introduction
+
+Maxbutt is a simple SSB client.
+
+@ifinfo
+Some background on Maxbutt, why we decided to build it, and what we hope to achieve.
+@end ifinfo
+
+@menu
+* History::                     How we got here.
+* Goals::                       What we hope to accomplish.
+@end menu
+
+@node History, Goals, Introduction, Introduction
+@section History
+
+@node Goals,  , History, Introduction
+@section Goals
+
+@node Erlbutt, Commands, Introduction, Top
+@chapter Erlbutt
+
+@menu
+* SSB-Server::                        Scuttlebutt Implementation
+* BEAM::                              Foundation on Distel
+@end menu
+
+@node SSB-Server, BEAM, Erlbutt, Erlbutt
+@section SSB-Server
+
+@node BEAM, , SSB-Server, Erlbutt
+@section BEAM
+
+@node Commands, , Erlbutt, Top
+
+@bye
+
