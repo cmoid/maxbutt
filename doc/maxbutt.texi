@@ -5,7 +5,7 @@
 @c %**end of header
 
 @set EDITION Maxbutt SSB
-@set UPDATED $Date: 2005/02/20 22:10:15 $
+@set UPDATED $Date: 2024/2/25 17:57:00 $
 @set VERSION SSB
 
 @titlepage
