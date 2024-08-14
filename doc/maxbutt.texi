@@ -58,7 +58,7 @@ Commands
 @node Introduction, Erlbutt, Top, Top
 @chapter Introduction
 
-Maxbutt is a simple SSB client.
+Maxbutt is a simple SSB client that runs as an emacs extension.
 
 @ifinfo
 Some background on Maxbutt, why we decided to build it, and what we hope to achieve.
