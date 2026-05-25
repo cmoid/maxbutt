@@ -18,6 +18,7 @@
 
 (require 'erl)
 (require 'erl-service)
+(require 'markdown-mode)
 
 ;;; Configuration
 
@@ -65,24 +66,32 @@ Prompts interactively if called with M-x."
 (defun ssb--show-current-message ()
   "Display the full content of the message at point in a window below."
   (interactive)
-  (let ((content (get-text-property (point) 'ssb-content))
+  (let ((parsed (get-text-property (point) 'ssb-parsed))
+        (content (get-text-property (point) 'ssb-content))
         (seq     (get-text-property (point) 'ssb-seq)))
     (when content
-      (ssb--show-message seq content))))
+      (ssb--show-message seq content parsed))))
 
-(defun ssb--show-message (seq content)
-  "Render the full JSON CONTENT of message SEQ in a split window below."
-  (let ((buf (get-buffer-create "*ssb-message*")))
+(defun ssb--show-message (seq content parsed)
+  "Render message SEQ in a split window below.
+Shows the text field as markdown when available, raw JSON otherwise."
+  (let* ((text (and parsed (alist-get 'text parsed)))
+         (buf (get-buffer-create "*ssb-message*")))
     (with-current-buffer buf
       (let ((inhibit-read-only t))
         (erase-buffer)
         (insert (format "Message [%d]\n" seq))
         (insert (make-string 72 ?-) "\n\n")
-        (let ((json-start (point)))
-          (insert content)
-          (when (fboundp 'json-pretty-print)
-            (ignore-errors (json-pretty-print json-start (point)))))
-        (special-mode)
+        (if text
+            (insert text)
+          (let ((json-start (point)))
+            (insert content)
+            (when (fboundp 'json-pretty-print)
+              (ignore-errors (json-pretty-print json-start (point))))))
+        (if text
+            (markdown-mode)
+          (special-mode))
+        (setq buffer-read-only t)
         (goto-char (point-min))))
     (display-buffer buf '(display-buffer-below-selected
                           (window-height . 0.4)))))
@@ -111,15 +120,17 @@ Prompts interactively if called with M-x."
 
 (defun ssb--insert-msg (msg)
   "Insert one {Seq, Author, ContentJson} tuple into the current buffer.
-Stores full content and seq as text properties for navigation."
+Stores full content, parsed content, and seq as text properties for navigation."
   ;; erlext decodes {Seq, Author, ContentJson} as a plain 0-indexed vector.
   ;; Binaries arrive as plain elisp strings — no erl-binary wrapper.
   (let* ((seq     (elt msg 0))
          (content (elt msg 2))
-         (snippet (ssb--content-snippet content))
+         (parsed  (ssb--parse-content content))
+         (snippet (ssb--content-snippet parsed content))
          (start   (point)))
     (insert (format "[%5d] %s\n" seq snippet))
     (put-text-property start (1- (point)) 'ssb-content content)
+    (put-text-property start (1- (point)) 'ssb-parsed parsed)
     (put-text-property start (1- (point)) 'ssb-seq seq)))
 
 (defun ssb--error-p (reply)
@@ -128,13 +139,23 @@ Stores full content and seq as text properties for navigation."
        (> (length reply) 0)
        (eq (elt reply 0) 'error)))
 
-(defun ssb--content-snippet (json-str)
-  "Return a single-line display snippet from JSON-STR."
-  (let* ((oneline (replace-regexp-in-string "[\n\r]+" " " json-str))
+(defun ssb--parse-content (json-str)
+  "Parse JSON-STR and return an alist of content fields, or nil on failure."
+  (condition-case nil
+      (json-parse-string json-str :object-type 'alist)
+    (error nil)))
+
+(defun ssb--content-snippet (parsed json-str)
+  "Return a single-line display snippet.
+Uses the first line of the text field from PARSED when available,
+falls back to collapsing JSON-STR to one line."
+  (let* ((text (and parsed (alist-get 'text parsed)))
+         (source (or text json-str))
+         (first-line (car (split-string source "[\n\r]+" t)))
          (max 72))
-    (if (> (length oneline) max)
-        (concat (substring oneline 0 max) "…")
-      oneline)))
+    (if (and first-line (> (length first-line) max))
+        (concat (substring first-line 0 max) "…")
+      (or first-line ""))))
 
 (defun ssb--short-id (feed-id)
   "Return a short prefix of FEED-ID for use in buffer names."
