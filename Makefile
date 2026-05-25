@@ -1,7 +1,7 @@
 PACKAGE := maxbutt
 VERSION := $(shell git describe --tags 2> /dev/null)
 
-prefix      = ~/code/emacs-ext
+prefix      = $(HOME)/code/emacs-ext
 exec_prefix = ${prefix}
 bindir      = ${exec_prefix}/bin
 datadir     = ${prefix}
@@ -22,8 +22,27 @@ ERL_OBJ := $(patsubst src/%.erl,ebin/%.beam,${ERL_SRC})
 ELISP_SRC := $(wildcard elisp/*.el)
 ELISP_OBJ := $(patsubst %.el,%.elc,${ELISP_SRC})
 
+## Compile in explicit dependency order to avoid stale .elc loading issues.
+ELISP_COMPILE_ORDER := \
+	elisp/mcase.el \
+	elisp/erlext.el \
+	elisp/epmd.el \
+	elisp/net-fsm.el \
+	elisp/erl.el \
+	elisp/erl-service.el \
+	elisp/derl.el \
+	elisp/distel.el \
+	elisp/distel-debug.el \
+	elisp/distel-ie.el \
+	elisp/erl-example.el \
+	elisp/erl-test.el \
+	elisp/ssb-feed.el
+
 ELISP_SOME_SRC := $(filter-out elisp/maxbutt%.el,${ELISP_SRC})
 ELISP_SOME_OBJ := $(patsubst %.el,%.elc,${ELISP_SOME_SRC})
+
+## Erlang tools emacs dir (for erlang-mode, needed by distel et al.)
+ERLANG_EMACS_DIR := $(shell erl -eval 'io:format("~s/emacs",[code:lib_dir(tools)])' -s init stop -noshell 2>/dev/null)
 
 DOC_SRC  := doc/maxbutt.texi
 INFO_OBJ := doc/maxbutt.info
@@ -59,9 +78,17 @@ release_patch:
 ebin/%.beam: src/%.erl
 	${erlc} -W -o ebin +debug_info $<
 
-## Elisp
-elisp/%.elc: elisp/%.el
-	${emacs} -batch -l ~/.emacs -L elisp -f batch-byte-compile $<
+## Elisp — compile all in one session, in dependency order, without loading
+## ~/.emacs (which would pull in stale .elc files and corrupt doc-string offsets).
+${ELISP_SOME_OBJ}: ${ELISP_SOME_SRC}
+	rm -f elisp/*.elc
+	${emacs} -batch \
+		-L "${ERLANG_EMACS_DIR}" \
+		-L elisp \
+		-L "${datadir}/markdown-mode" \
+		--eval "(require 'erlang-start)" \
+		--eval "(setq byte-compile-dynamic-docstrings nil)" \
+		-f batch-byte-compile ${ELISP_COMPILE_ORDER}
 
 ## Info documentation
 doc/distel.info: ${DOC_SRC}
@@ -96,6 +123,7 @@ install: base
 
 info_install: info
 	  @echo "* Installing Info documentation"
+	  install -m 775 -d ${infodir}
 	  cp doc/maxbutt.info ${infodir}
 # NB: Debian's not-GNU-compatible install-info needs "--section Emacs Emacs"
 	  install-info --info-dir=${infodir} --section Emacs \
