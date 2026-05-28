@@ -30,15 +30,18 @@
 
 ;;; Public commands
 
-(defun ssb-browse-feed (feed-id)
+(defun ssb-browse-feed (feed-id &optional limit)
   "Browse the SSB feed FEED-ID from the local erlbutt node.
 FEED-ID should be the full @<pubkey>=.ed25519 string.
-Prompts interactively if called with M-x."
-  (interactive "sSSB Feed ID (@...=.ed25519): ")
-  (erl-rpc #'ssb--display-feed (list feed-id)
-           ssb-node
-           'maxbutt 'browse_feed
-           (list (erl-binary feed-id) ssb-browse-limit)))
+LIMIT defaults to `ssb-browse-limit'; prompts interactively for both."
+  (interactive
+   (list (read-string "SSB Feed ID (@...=.ed25519): ")
+         (read-number "Message limit: " ssb-browse-limit)))
+  (let ((n (or limit ssb-browse-limit)))
+    (erl-rpc #'ssb--display-feed (list feed-id)
+             ssb-node
+             'maxbutt 'browse_feed
+             (list (erl-binary feed-id) n))))
 
 (defun ssb-my-id ()
   "Show the local erlbutt node's own feed ID in the minibuffer."
