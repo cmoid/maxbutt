@@ -33,9 +33,10 @@ This is the user manual for Maxbutt.
 @end ifinfo
 
 @menu
-* Introduction::                
-* Erlbutt::            
-* Commands::                
+* Introduction::
+* Erlbutt::
+* Commands::
+* Customization::
 
 @detailmenu
  --- The Detailed Node Listing ---
@@ -51,6 +52,13 @@ Erlbutt
 * BEAM::                        Foundation on Distel.
 
 Commands
+
+* Browsing Feeds::              Fetching and navigating a feed.
+* Thread Tracing::              Following tangle threads.
+
+Customization
+
+* User Options::                Variables you can set via M-x customize.
 
 @end detailmenu
 @end menu
@@ -89,7 +97,95 @@ Some background on Maxbutt, why we decided to build it, and what we hope to achi
 @node BEAM, , SSB-Server, Erlbutt
 @section BEAM
 
-@node Commands, , Erlbutt, Top
+@node Commands, Customization, Erlbutt, Top
+@chapter Commands
+
+@menu
+* Browsing Feeds::
+* Thread Tracing::
+@end menu
+
+@node Browsing Feeds, Thread Tracing, Commands, Commands
+@section Browsing Feeds
+
+@deffn Command ssb-browse-feed feed-id &optional limit
+Fetch and display messages from the SSB feed @var{feed-id}.
+@var{feed-id} is the full @code{@@<pubkey>=.ed25519} string.
+@var{limit} defaults to @code{ssb-browse-limit}.
+
+When called interactively, prompts for both the feed ID and the
+message limit, with the current value of @code{ssb-browse-limit}
+shown as the default.
+
+The feed opens in an @code{ssb-feed-mode} buffer.  Key bindings:
+
+@table @kbd
+@item n
+Move to the next message and display its content below.
+@item p
+Move to the previous message.
+@item @key{RET}
+Open the message at point in a window below.
+@item t
+Trace the tangle thread rooted at the message at point.
+@end table
+@end deffn
+
+@deffn Command ssb-my-id
+Display the local erlbutt node's own feed ID in the minibuffer.
+@end deffn
+
+@node Thread Tracing, , Browsing Feeds, Commands
+@section Thread Tracing
+
+@deffn Command ssb-show-thread
+Show the tangle thread for the message at point.
+
+When invoked from a feed buffer, opens the full thread rooted at
+that message.  When invoked from inside a thread buffer, shows the
+sub-thread descending from the current entry, using the stored tangle
+root so backward references resolve correctly.
+
+The thread opens in an @code{ssb-thread-mode} buffer.  Key bindings:
+
+@table @kbd
+@item n / p
+Step through thread entries.
+@item @key{RET}
+Display the full text of the entry at point below.
+@item t
+Drill into the sub-thread at point.
+@end table
+@end deffn
+
+@node Customization, , Commands, Top
+@chapter Customization
+
+All maxbutt options belong to the @code{maxbutt} customize group.
+Access them with @kbd{M-x customize-group @key{RET} maxbutt @key{RET}}.
+
+@menu
+* User Options::
+@end menu
+
+@node User Options, , Customization, Customization
+@section User Options
+
+@defopt ssb-node
+The Erlang node name of the running erlbutt instance, as a symbol.
+Default: @code{erlbutt@@localhost}.
+
+Must match the @option{-sname} used when starting the release.  Change
+this if you run erlbutt under a different name or on a remote host.
+@end defopt
+
+@defopt ssb-browse-limit
+Default number of messages fetched by @code{ssb-browse-feed}.
+Default: @code{2000}.
+
+Can be overridden on a per-invocation basis when calling
+@code{ssb-browse-feed} interactively.
+@end defopt
 
 @bye
 

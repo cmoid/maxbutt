@@ -20,13 +20,33 @@
 (require 'erl-service)
 (require 'markdown-mode)
 
-;;; Configuration
+;;; Customization
 
-(defvar ssb-node 'erlbutt@localhost
-  "Erlang node name of the running erlbutt instance.")
+(defgroup maxbutt nil
+  "Emacs client for the SSB protocol via a local erlbutt node."
+  :prefix "ssb-"
+  :group 'applications
+  :link '(info-link "(maxbutt)Top"))
 
-(defvar ssb-browse-limit 2000
-  "Number of messages to fetch per `ssb-browse-feed' call.")
+(defun ssb--set-node (sym val)
+  "Set `ssb-node' to VAL and seed `erl-nodename-cache' so C-c C-d n defaults to it."
+  (set-default sym val)
+  (when (boundp 'erl-nodename-cache)
+    (setq erl-nodename-cache val)))
+
+(defcustom ssb-node 'erlbutt@localhost
+  "Erlang node name of the running erlbutt instance.
+Must match the sname used when starting the erlbutt release,
+e.g. erlbutt@localhost for a local dev node."
+  :type 'symbol
+  :group 'maxbutt
+  :set #'ssb--set-node)
+
+(defcustom ssb-browse-limit 2000
+  "Default number of messages to fetch per `ssb-browse-feed' call.
+Can be overridden interactively when invoking the command."
+  :type 'integer
+  :group 'maxbutt)
 
 ;;; Public commands
 
