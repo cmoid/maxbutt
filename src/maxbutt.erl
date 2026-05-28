@@ -11,6 +11,11 @@
 
 -export([browse_feed/2,
          my_id/0,
+         post/1,
+         reply/2,
+         vote/2,
+         get_msg/1,
+         log/0,
          thread/1,
          thread_from/2]).
 
@@ -49,6 +54,65 @@ browse_feed(FeedId, Limit) ->
 %% Return the local node's public feed ID (the @key=.ed25519 display form).
 my_id() ->
     keys:pub_key_disp().
+
+%% Publish a text post. Returns {ok, Key} or {error, Reason}.
+post(Text) when is_binary(Text) ->
+    Content = {[{~"type", ~"post"}, {~"text", Text}]},
+    our_feed_post(Content);
+post(Text) when is_list(Text) ->
+    post(list_to_binary(Text)).
+
+%% Reply to RootKey with Text. Adds tangle links so the thread is traceable.
+reply(RootKey, Text) when is_binary(Text) ->
+    Content = {[{~"type",   ~"post"},
+                {~"text",   Text},
+                {~"root",   RootKey},
+                {~"branch", [RootKey]}]},
+    our_feed_post(Content).
+
+%% Vote on MsgKey: Value is 1 (like) or -1 (unlike).
+vote(MsgKey, Value) when Value =:= 1 orelse Value =:= -1 ->
+    Content = {[{~"type",  ~"vote"},
+                {~"vote",  {[{~"link",  MsgKey},
+                              {~"value", Value},
+                              {~"expression", case Value of 1 -> ~"Like"; _ -> ~"Unlike" end}]}}]},
+    our_feed_post(Content).
+
+%% Fetch a message by its key. Returns the #message{} record or {error, not_found}.
+get_msg(Key) when is_binary(Key) ->
+    case mess_auth:get(Key) of
+        not_found -> {error, not_found};
+        Author    ->
+            FeedPid = utils:find_or_create_feed_pid(Author),
+            ssb_feed:fetch_msg(FeedPid, Key)
+    end.
+
+%% Return all messages across all feeds as {Key, Author, ContentJson} triples.
+%% Ordered per-feed by sequence; feed order is unspecified.
+log() ->
+    AllFeeds = case ets:info(ssb_feed_registry) of
+        undefined -> [];
+        _         -> ets:tab2list(ssb_feed_registry)
+    end,
+    lists:flatmap(fun({_FeedId, FeedPid}) ->
+        ssb_feed:foldl(FeedPid,
+            fun(MsgData, Acc) ->
+                try
+                    #message{id = Key, author = Author, content = Content} =
+                        message:decode(MsgData, false),
+                    ContentJson = iolist_to_binary(utils:encode_rec(Content)),
+                    [{Key, Author, ContentJson} | Acc]
+                catch _:_ -> Acc
+                end
+            end, [])
+    end, AllFeeds).
+
+our_feed_post(Content) ->
+    OurId   = keys:pub_key_disp(),
+    FeedPid = utils:find_or_create_feed_pid(OurId),
+    ok = ssb_feed:post_content(FeedPid, Content),
+    #message{id = Key} = ssb_feed:fetch_last_msg(FeedPid),
+    {ok, Key}.
 
 %% Return a flat list of {Key, Author, Text, Depth} for all messages in the
 %% tangle rooted at RootKey, in depth-first order.  Depth starts at 0.
