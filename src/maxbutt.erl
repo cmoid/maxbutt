@@ -90,12 +90,9 @@ get_msg(Key) when is_binary(Key) ->
 %% Return all messages across all feeds as {Key, Author, ContentJson} triples.
 %% Ordered per-feed by sequence; feed order is unspecified.
 log() ->
-    AllFeeds = case ets:info(ssb_feed_registry) of
-        undefined -> [];
-        _         -> ets:tab2list(ssb_feed_registry)
-    end,
-    lists:flatmap(fun({_FeedId, FeedPid}) ->
-        ssb_feed:foldl(FeedPid,
+    LogFile = <<(config:ssb_repo_loc())/binary, "log.offset">>,
+    lists:reverse(
+        utils:fold_log_file(
             fun(MsgData, Acc) ->
                 try
                     #message{id = Key, author = Author, content = Content} =
@@ -104,8 +101,7 @@ log() ->
                     [{Key, Author, ContentJson} | Acc]
                 catch _:_ -> Acc
                 end
-            end, [])
-    end, AllFeeds).
+            end, [], LogFile)).
 
 our_feed_post(Content) ->
     OurId   = keys:pub_key_disp(),
