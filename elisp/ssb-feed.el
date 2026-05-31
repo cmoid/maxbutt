@@ -139,15 +139,41 @@ Shows the text field as markdown when available, raw JSON otherwise."
             (ssb--insert-msg msg))))
         (ssb-feed-mode)
         (goto-char (point-min))))
-    (pop-to-buffer buf)))
+    (pop-to-buffer buf))
+  ;; Fetch the profile name asynchronously and update the header.
+  (erl-rpc (lambda (name) (ssb--update-feed-header feed-id name))
+           nil ssb-node 'maxbutt 'profile_name
+           (list (erl-binary feed-id))))
+
+(defun ssb--update-feed-header (feed-id name)
+  "Insert NAME into the feed buffer header for FEED-ID."
+  (when (and name (not (eq name 'undefined)) (not (string= name "")))
+    (let ((buf (get-buffer (format "*ssb %s*" (ssb--short-id feed-id)))))
+      (when buf
+        (with-current-buffer buf
+          (let ((inhibit-read-only t))
+            (save-excursion
+              (goto-char (point-min))
+              (when (re-search-forward "^Feed: " nil t)
+                (end-of-line)
+                (insert (format "  [%s]" (decode-coding-string name 'utf-8 t)))))))))))
+
+(defun ssb-browse-author-feed ()
+  "Browse the feed of the author at point."
+  (interactive)
+  (let ((author (get-text-property (point) 'ssb-author)))
+    (if author
+        (ssb-browse-feed author ssb-browse-limit)
+      (message "No author at point"))))
 
 (defun ssb--insert-msg (msg)
   "Insert one {Seq, Key, Author, ContentJson} tuple into the current buffer.
-Stores content, parsed content, key, and seq as text properties for navigation."
+Stores content, parsed content, key, author, and seq as text properties."
   ;; erlext decodes {Seq, Key, Author, ContentJson} as a plain 0-indexed vector.
   ;; Binaries arrive as plain elisp strings — no erl-binary wrapper.
   (let* ((seq     (elt msg 0))
          (key     (elt msg 1))
+         (author  (elt msg 2))
          (content (elt msg 3))
          (parsed  (ssb--parse-content content))
          (snippet (ssb--content-snippet parsed content))
@@ -156,7 +182,8 @@ Stores content, parsed content, key, and seq as text properties for navigation."
     (put-text-property start (1- (point)) 'ssb-content content)
     (put-text-property start (1- (point)) 'ssb-parsed  parsed)
     (put-text-property start (1- (point)) 'ssb-seq     seq)
-    (put-text-property start (1- (point)) 'ssb-key     key)))
+    (put-text-property start (1- (point)) 'ssb-key     key)
+    (put-text-property start (1- (point)) 'ssb-author  author)))
 
 (defun ssb--error-p (reply)
   "True if REPLY is an {error, Reason} tuple from maxbutt."
@@ -189,8 +216,10 @@ falls back to collapsing JSON-STR to one line."
 ;;; Thread tracing
 
 (defun ssb-show-thread ()
-  "Show the tangle thread rooted at the message under point.
-In a thread buffer, uses the stored tangle root so descendants are found correctly."
+  "Open the tangle thread rooted at the message under point.
+Fetches the tree structure only — no message content is loaded yet.
+Use RET on a thread entry to fetch and display its content.
+Use c or t to collapse/expand subtrees in place."
   (interactive)
   (let ((key      (get-text-property (point) 'ssb-key))
         (root-key (get-text-property (point) 'ssb-tangle-root)))
@@ -233,41 +262,68 @@ KEY is the tangle root used for sub-thread navigation."
     (pop-to-buffer buf)))
 
 (defun ssb--insert-thread-entry (entry root-key)
-  "Insert one {Key, Author, Text, Depth} tuple into the thread buffer.
+  "Insert one {Key, Author, Name, Depth} tuple into the thread buffer.
+Also handles legacy 3-tuple {Key, Author, Depth} from older beam.
 ROOT-KEY is the tangle root, stored so sub-thread navigation works."
-  ;; 0-indexed: Key=0, Author=1, Text=2, Depth=3
-  (let* ((key     (elt entry 0))
-         (author  (elt entry 1))
-         (text    (elt entry 2))
-         (depth   (elt entry 3))
-         (indent  (make-string (* depth 2) ?\s))
-         (snippet (ssb--text-snippet text))
-         (start   (point)))
-    (insert (format "%s[%s] %s\n" indent (ssb--short-id author) snippet))
+  (let* ((key      (elt entry 0))
+         (author   (elt entry 1))
+         (has-name (> (length entry) 3))
+         (name     (when has-name (elt entry 2)))
+         (depth    (if has-name (elt entry 3) (elt entry 2)))
+         (label    (if (and (stringp name) (not (string= name "")))
+                       (decode-coding-string name 'utf-8 t)
+                     (ssb--short-id author)))
+         (indent (make-string (* depth 2) ?\s))
+         (start  (point)))
+    (insert (format "%s[%s] %s\n" indent label (ssb--short-id key)))
     (put-text-property start (1- (point)) 'ssb-key         key)
-    (put-text-property start (1- (point)) 'ssb-content     text)
+    (put-text-property start (1- (point)) 'ssb-author      author)
     (put-text-property start (1- (point)) 'ssb-depth       depth)
     (put-text-property start (1- (point)) 'ssb-tangle-root root-key)))
 
 (defun ssb--show-thread-current-message ()
-  "Display the full text of the thread entry at point in a window below."
+  "Fetch and display the message at point in a window below."
   (interactive)
-  (let ((text (get-text-property (point) 'ssb-content))
-        (key  (get-text-property (point) 'ssb-key)))
-    (when text
-      (let ((buf (get-buffer-create "*ssb-message*")))
-        (with-current-buffer buf
-          (let ((inhibit-read-only t))
-            (erase-buffer)
-            (when key
-              (insert (format "Key: %s\n" key))
-              (insert (make-string 72 ?-) "\n\n"))
-            (insert (if (string= text "") "(no text)" text))
-            (markdown-mode)
-            (setq buffer-read-only t)
-            (goto-char (point-min))))
-        (display-buffer buf '(display-buffer-below-selected
-                              (window-height . 0.4)))))))
+  (let ((key (get-text-property (point) 'ssb-key)))
+    (when key
+      (erl-rpc #'ssb--display-thread-msg nil
+               ssb-node 'maxbutt 'get_msg_text
+               (list (erl-binary key))))))
+
+(defun ssb--display-thread-msg (reply)
+  "Display message text REPLY in a split window below."
+  (let ((buf (get-buffer-create "*ssb-message*")))
+    (with-current-buffer buf
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (if (or (null reply) (string= reply "")) "(no text)" reply))
+        (markdown-mode)
+        (setq buffer-read-only t)
+        (goto-char (point-min))))
+    (display-buffer buf '(display-buffer-below-selected
+                          (window-height . 0.4)))))
+
+(defun ssb-toggle-collapse ()
+  "Collapse or expand the subtree at point in the thread buffer.
+Bound to both c and t in ssb-thread-mode.  The cursor stays at point."
+  (interactive)
+  (let ((depth (get-text-property (point) 'ssb-depth)))
+    (when depth
+      (let* ((collapsed (get-text-property (point) 'ssb-collapsed))
+             (new-state (not collapsed)))
+        (let ((inhibit-read-only t))
+          (put-text-property (line-beginning-position) (line-end-position)
+                             'ssb-collapsed new-state))
+        (save-excursion
+          (forward-line 1)
+          (while (and (not (eobp))
+                      (let ((d (get-text-property (point) 'ssb-depth)))
+                        (and d (> d depth))))
+            (let ((inhibit-read-only t))
+              (put-text-property (line-beginning-position)
+                                 (min (1+ (line-end-position)) (point-max))
+                                 'invisible new-state))
+            (forward-line 1)))))))
 
 (defun ssb--text-snippet (text)
   "Return a single-line display snippet from TEXT, truncated to 72 chars."
@@ -287,7 +343,8 @@ ROOT-KEY is the tangle root, stored so sub-thread navigation works."
   (define-key map (kbd "n")   #'ssb-next-message)
   (define-key map (kbd "p")   #'ssb-prev-message)
   (define-key map (kbd "RET") #'ssb--show-current-message)
-  (define-key map (kbd "t")   #'ssb-show-thread))
+  (define-key map (kbd "t")   #'ssb-show-thread)
+  (define-key map (kbd "f")   #'ssb-browse-author-feed))
 
 (define-derived-mode ssb-thread-mode special-mode "SSB-Thread"
   "Major mode for viewing a Plumtree/tangle discussion thread.
@@ -297,7 +354,9 @@ ROOT-KEY is the tangle root, stored so sub-thread navigation works."
   (define-key map (kbd "n")   #'ssb-next-message)
   (define-key map (kbd "p")   #'ssb-prev-message)
   (define-key map (kbd "RET") #'ssb--show-thread-current-message)
-  (define-key map (kbd "t")   #'ssb-show-thread))
+  (define-key map (kbd "c")   #'ssb-toggle-collapse)
+  (define-key map (kbd "t")   #'ssb-toggle-collapse)
+  (define-key map (kbd "f")   #'ssb-browse-author-feed))
 
 (provide 'ssb-feed)
 ;;; ssb-feed.el ends here
