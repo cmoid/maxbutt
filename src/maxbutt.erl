@@ -11,10 +11,12 @@
 
 -export([browse_feed/2,
          my_id/0,
+         profile_name/1,
          post/1,
          reply/2,
          vote/2,
          get_msg/1,
+         get_msg_text/1,
          log/0,
          thread/1,
          thread_from/2]).
@@ -54,6 +56,14 @@ browse_feed(FeedId, Limit) ->
 %% Return the local node's public feed ID (the @key=.ed25519 display form).
 my_id() ->
     keys:pub_key_disp().
+
+%% Return the display name from a feed's own profile (most recent self-about
+%% with a name field), or undefined if none has been set.
+profile_name(FeedId) when is_binary(FeedId) ->
+    case utils:find_or_create_feed_pid(FeedId) of
+        bad -> undefined;
+        Pid -> ssb_feed:profile_name(Pid)
+    end.
 
 %% Publish a text post. Returns {ok, Key} or {error, Reason}.
 post(Text) when is_binary(Text) ->
@@ -110,44 +120,59 @@ our_feed_post(Content) ->
     #message{id = Key} = ssb_feed:fetch_last_msg(FeedPid),
     {ok, Key}.
 
-%% Return a flat list of {Key, Author, Text, Depth} for all messages in the
+%% Return a flat list of {Key, Author, Depth} for all messages in the
 %% tangle rooted at RootKey, in depth-first order.  Depth starts at 0.
+%% Message content is NOT fetched — use get_msg_text/1 on demand.
 %% Returns [] if the root is unknown or has no tangle data.
 thread(RootKey) ->
     try
         Tree = tangle:get_tangle(RootKey),
-        flatten_thread(Tree, 0)
+        enrich_with_names(flatten_thread(Tree, 0))
     catch _:_ ->
         []
     end.
 
-%% Show the sub-thread rooted at MsgId, using TangleId as the tangle root
-%% so references are resolved correctly (replies point to the original root).
+%% Show the sub-thread rooted at MsgId, using TangleId as the tangle root.
 thread_from(MsgId, TangleId) ->
     try
         {MsgId, Children} = tangle:descendants(MsgId, TangleId),
         Auth = mess_auth:get(MsgId),
-        flatten_thread({MsgId, Auth, Children}, 0)
+        enrich_with_names(flatten_thread({MsgId, Auth, Children}, 0))
     catch _:_ ->
         []
     end.
 
+%% Add profile name for each entry. Fetches each unique author once.
+%% Returns [{Key, Author, Name, Depth}] where Name may be undefined.
+enrich_with_names(Entries) ->
+    Authors = lists:usort([Auth || {_, Auth, _} <- Entries]),
+    Names   = maps:from_list([{A, profile_name(A)} || A <- Authors]),
+    [{Key, Auth, maps:get(Auth, Names, undefined), Depth}
+     || {Key, Auth, Depth} <- Entries].
+
+%% Fetch the displayable text for a single message on demand.
+%% Returns the text field for posts, raw content JSON for other types.
+get_msg_text(Key) when is_binary(Key) ->
+    case get_msg(Key) of
+        {error, not_found} ->
+            ~"(message not found)";
+        Msg ->
+            case Msg#message.content of
+                {Props} ->
+                    case proplists:get_value(~"text", Props) of
+                        undefined -> iolist_to_binary(utils:encode_rec({Props}));
+                        Text      -> Text
+                    end;
+                Content when is_binary(Content) ->
+                    Content
+            end
+    end.
+
 flatten_thread({MsgId, Auth, Children}, Depth) when is_list(Children) ->
-    [{MsgId, Auth, msg_text(MsgId, Auth), Depth} |
+    [{MsgId, Auth, Depth} |
      lists:flatmap(fun(Child) -> flatten_thread(Child, Depth + 1) end, Children)];
 flatten_thread({MsgId, Auth}, Depth) ->
-    [{MsgId, Auth, msg_text(MsgId, Auth), Depth}].
-
-msg_text(MsgId, Auth) ->
-    try
-        Feed = utils:find_or_create_feed_pid(Auth),
-        Msg  = ssb_feed:fetch_msg(Feed, MsgId),
-        case Msg#message.content of
-            {Props} -> proplists:get_value(~"text", Props, ~"");
-            _       -> ~""
-        end
-    catch _:_ -> ~""
-    end.
+    [{MsgId, Auth, Depth}].
 
 is_post({Props}) when is_list(Props) ->
     proplists:get_value(~"type", Props) =:= ~"post";
