@@ -2,19 +2,27 @@
 
 ;;; Commentary:
 ;;
-;; Provides `ssb-browse-feed', an interactive command that fetches messages
-;; from a feed stored in a running erlbutt node and displays them in a
-;; read-only buffer.
+;; Provides commands for browsing SSB feeds and tangle threads via a running
+;; erlbutt node connected through Erlang distribution (Distel).
 ;;
 ;; Prerequisites:
 ;;   - A running erlbutt node reachable via Erlang distribution.
 ;;   - The maxbutt.beam module loaded into that node.
 ;;   - distel connected to the node (M-x erl-choose-nodename).
+;;     ssb-node is seeded automatically as the default node name.
 ;;
-;; Usage:
-;;   M-x ssb-browse-feed  RET  @<pubkey>=.ed25519  RET
-;;   n / p   — step through messages; selected message opens below.
-;;   RET     — open the message under point.
+;; Feed browsing (ssb-feed-mode):
+;;   M-x ssb-browse-feed  RET  @<pubkey>=.ed25519  RET  [limit RET]
+;;   n / p   — step through messages.
+;;   RET     — open the message at point in a window below.
+;;   t       — open the tangle thread rooted at the message at point.
+;;
+;; Thread navigation (ssb-thread-mode):
+;;   The thread buffer shows {Author, MsgKey} entries indented by depth.
+;;   Message content is fetched lazily — only when you ask for it.
+;;   n / p   — step through thread entries.
+;;   RET     — fetch and display the message at point in a window below.
+;;   c / t   — collapse or expand the subtree at point in place.
 
 (require 'erl)
 (require 'erl-service)

@@ -139,24 +139,32 @@ Display the local erlbutt node's own feed ID in the minibuffer.
 @section Thread Tracing
 
 @deffn Command ssb-show-thread
-Show the tangle thread for the message at point.
+Open the tangle thread rooted at the message at point.
 
-When invoked from a feed buffer, opens the full thread rooted at
-that message.  When invoked from inside a thread buffer, shows the
-sub-thread descending from the current entry, using the stored tangle
-root so backward references resolve correctly.
+Fetches the full tree structure from erlbutt and displays it in an
+@code{ssb-thread-mode} buffer.  Each entry shows the author and
+message key, indented by depth.  Message content is @emph{not} loaded
+until you explicitly request it with @key{RET}.
 
-The thread opens in an @code{ssb-thread-mode} buffer.  Key bindings:
+@end deffn
+
+The thread buffer (@code{ssb-thread-mode}) provides the following
+key bindings:
 
 @table @kbd
-@item n / p
-Step through thread entries.
+@item n
+Move to the next thread entry.
+@item p
+Move to the previous thread entry.
 @item @key{RET}
-Display the full text of the entry at point below.
+Fetch and display the full content of the entry at point in a window
+below.  This is the only action that loads message content from erlbutt.
+@item c
+Collapse or expand the subtree rooted at the entry at point.
+The cursor stays in place.
 @item t
-Drill into the sub-thread at point.
+Same as @kbd{c} — toggle collapse/expand of the subtree at point.
 @end table
-@end deffn
 
 @node Customization, , Commands, Top
 @chapter Customization
