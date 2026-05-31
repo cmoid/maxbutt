@@ -3,8 +3,12 @@
 %% Copyright (C) 2026 Charles Moid
 %%
 %% RPC bridge between the maxbutt Emacs client and a running erlbutt node.
-%% Functions here are designed to return simple terms that serialise cleanly
-%% over the Erlang distribution protocol and are easy to destructure in elisp.
+%% Functions return simple terms that serialise cleanly over Erlang
+%% distribution and are easy to destructure in elisp.
+%%
+%% Thread traversal is lazy: thread/1 and thread_from/2 return only the
+%% tree structure {Key, Author, Depth} without fetching message content.
+%% Call get_msg_text/1 on demand when the user selects a specific entry.
 -module(maxbutt).
 
 -include("../erlbutt/apps/ssb/include/ssb.hrl").
