@@ -341,6 +341,113 @@ Bound to both c and t in ssb-thread-mode.  The cursor stays at point."
         (concat (substring first-line 0 max) "…")
       (or first-line "(no text)"))))
 
+;;; Compose
+
+(defvar-local ssb--compose-action nil
+  "Action to perform on send: symbol `post' or `reply'.")
+
+(defvar-local ssb--compose-root-key nil
+  "Tangle root key for `reply' actions.")
+
+(defvar-local ssb--compose-start nil
+  "Marker pointing to the start of user-editable text in the compose buffer.")
+
+(define-minor-mode ssb-compose-mode
+  "Minor mode for composing SSB posts and replies.
+\\{ssb-compose-mode-map}"
+  :lighter " SSB-Compose"
+  :keymap (let ((map (make-sparse-keymap)))
+            (define-key map (kbd "C-c C-c") #'ssb-compose-send)
+            (define-key map (kbd "C-c C-k") #'ssb-compose-cancel)
+            map))
+
+(defun ssb--open-compose-buffer (action &optional root-key header)
+  "Open the *ssb-compose* buffer for ACTION (`post' or `reply').
+ROOT-KEY is required for replies.  HEADER is shown read-only at the top."
+  (let ((buf (get-buffer-create "*ssb-compose*")))
+    (with-current-buffer buf
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (text-mode)
+        (ssb-compose-mode 1)
+        (setq ssb--compose-action action
+              ssb--compose-root-key root-key)
+        (when header
+          (insert header "\n" (make-string 72 ?-) "\n")
+          (add-text-properties (point-min) (point)
+                               '(read-only t front-sticky (read-only)
+                                 rear-nonsticky (read-only))))
+        (setq ssb--compose-start (point-marker))
+        (goto-char (point-max))))
+    (pop-to-buffer buf)))
+
+(defun ssb-post ()
+  "Compose and publish a new SSB post."
+  (interactive)
+  (ssb--open-compose-buffer 'post nil
+    "New post  (C-c C-c to send, C-c C-k to cancel)"))
+
+(defun ssb-reply ()
+  "Compose a reply to the message at point."
+  (interactive)
+  (let ((key (get-text-property (point) 'ssb-key)))
+    (if (not key)
+        (message "No message key at point")
+      (ssb--open-compose-buffer
+       'reply key
+       (format "Replying to %s  (C-c C-c to send, C-c C-k to cancel)"
+               (ssb--short-id key))))))
+
+(defun ssb-compose-send ()
+  "Send the composed text to the erlbutt node."
+  (interactive)
+  (let* ((text   (string-trim
+                  (buffer-substring-no-properties ssb--compose-start (point-max))))
+         (action ssb--compose-action)
+         (root   ssb--compose-root-key))
+    (when (string= text "") (user-error "Nothing to send"))
+    (pcase action
+      ('post
+       (erl-rpc #'ssb--compose-sent nil ssb-node 'maxbutt 'post
+                (list (erl-binary text))))
+      ('reply
+       (erl-rpc #'ssb--compose-sent nil ssb-node 'maxbutt 'reply
+                (list (erl-binary root) (erl-binary text))))
+      (_ (user-error "Unknown compose action: %s" action)))))
+
+(defun ssb--compose-sent (reply)
+  "Handle the RPC reply after a post or reply is published."
+  (if (and (vectorp reply) (eq (elt reply 0) 'ok))
+      (progn
+        (message "Published: %s" (elt reply 1))
+        (kill-buffer "*ssb-compose*"))
+    (message "Publish failed: %s" reply)))
+
+(defun ssb-compose-cancel ()
+  "Discard the compose buffer without sending."
+  (interactive)
+  (kill-buffer (current-buffer)))
+
+(defun ssb-vote-like ()
+  "Send a +1 like vote for the message at point."
+  (interactive)
+  (let ((key (get-text-property (point) 'ssb-key)))
+    (if (not key)
+        (message "No message key at point")
+      (erl-rpc (lambda (reply) (message "Liked: %s" (elt reply 1)))
+               nil ssb-node 'maxbutt 'vote
+               (list (erl-binary key) 1)))))
+
+(defun ssb-vote-unlike ()
+  "Send a -1 unlike vote for the message at point."
+  (interactive)
+  (let ((key (get-text-property (point) 'ssb-key)))
+    (if (not key)
+        (message "No message key at point")
+      (erl-rpc (lambda (reply) (message "Unliked: %s" (elt reply 1)))
+               nil ssb-node 'maxbutt 'vote
+               (list (erl-binary key) -1)))))
+
 ;;; Major mode
 
 (define-derived-mode ssb-feed-mode special-mode "SSB-Feed"
@@ -352,7 +459,10 @@ Bound to both c and t in ssb-thread-mode.  The cursor stays at point."
   (define-key map (kbd "p")   #'ssb-prev-message)
   (define-key map (kbd "RET") #'ssb--show-current-message)
   (define-key map (kbd "t")   #'ssb-show-thread)
-  (define-key map (kbd "f")   #'ssb-browse-author-feed))
+  (define-key map (kbd "f")   #'ssb-browse-author-feed)
+  (define-key map (kbd "r")   #'ssb-reply)
+  (define-key map (kbd "+")   #'ssb-vote-like)
+  (define-key map (kbd "-")   #'ssb-vote-unlike))
 
 (define-derived-mode ssb-thread-mode special-mode "SSB-Thread"
   "Major mode for viewing a Plumtree/tangle discussion thread.
@@ -364,7 +474,10 @@ Bound to both c and t in ssb-thread-mode.  The cursor stays at point."
   (define-key map (kbd "RET") #'ssb--show-thread-current-message)
   (define-key map (kbd "c")   #'ssb-toggle-collapse)
   (define-key map (kbd "t")   #'ssb-toggle-collapse)
-  (define-key map (kbd "f")   #'ssb-browse-author-feed))
+  (define-key map (kbd "f")   #'ssb-browse-author-feed)
+  (define-key map (kbd "r")   #'ssb-reply)
+  (define-key map (kbd "+")   #'ssb-vote-like)
+  (define-key map (kbd "-")   #'ssb-vote-unlike))
 
 (provide 'ssb-feed)
 ;;; ssb-feed.el ends here
