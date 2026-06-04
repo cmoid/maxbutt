@@ -55,6 +55,7 @@ Commands
 
 * Browsing Feeds::              Fetching and navigating a feed.
 * Thread Tracing::              Following tangle threads.
+* Publishing::                  Writing posts, replies, and votes.
 
 Customization
 
@@ -103,6 +104,7 @@ Some background on Maxbutt, why we decided to build it, and what we hope to achi
 @menu
 * Browsing Feeds::
 * Thread Tracing::
+* Publishing::
 @end menu
 
 @node Browsing Feeds, Thread Tracing, Commands, Commands
@@ -128,6 +130,12 @@ Move to the previous message.
 Open the message at point in a window below.
 @item t
 Trace the tangle thread rooted at the message at point.
+@item r
+Reply to the message at point (@pxref{Publishing}).
+@item +
+Send a like vote for the message at point.
+@item -
+Send an unlike vote for the message at point.
 @end table
 @end deffn
 
@@ -135,7 +143,7 @@ Trace the tangle thread rooted at the message at point.
 Display the local erlbutt node's own feed ID in the minibuffer.
 @end deffn
 
-@node Thread Tracing, , Browsing Feeds, Commands
+@node Thread Tracing, Publishing, Browsing Feeds, Commands
 @section Thread Tracing
 
 @deffn Command ssb-show-thread
@@ -164,6 +172,57 @@ Collapse or expand the subtree rooted at the entry at point.
 The cursor stays in place.
 @item t
 Same as @kbd{c} — toggle collapse/expand of the subtree at point.
+@item r
+Reply to the message at point (@pxref{Publishing}).
+@item +
+Send a like vote for the message at point.
+@item -
+Send an unlike vote for the message at point.
+@end table
+
+@node Publishing, , Thread Tracing, Commands
+@section Publishing
+
+@deffn Command ssb-post
+Compose and publish a new SSB post.
+
+Opens the @code{*ssb-compose*} buffer (@pxref{Compose Buffer}).
+Type your message and send it with @kbd{C-c C-c}.
+@end deffn
+
+@deffn Command ssb-reply
+Compose a reply to the message at point.
+
+Available in both @code{ssb-feed-mode} and @code{ssb-thread-mode}
+via the @kbd{r} key.  Opens the @code{*ssb-compose*} buffer with a
+read-only header identifying the message being replied to.  The reply
+is published with tangle links so it appears correctly in thread views.
+@end deffn
+
+@deffn Command ssb-vote-like
+Send a @code{+1} (Like) vote for the message at point.
+Available via @kbd{+} in feed and thread buffers.
+@end deffn
+
+@deffn Command ssb-vote-unlike
+Send a @code{-1} (Unlike) vote for the message at point.
+Available via @kbd{-} in feed and thread buffers.
+@end deffn
+
+@subsection Compose Buffer
+@anchor{Compose Buffer}
+
+@code{ssb-post} and @code{ssb-reply} open a @code{*ssb-compose*}
+buffer running @code{text-mode} with the @code{ssb-compose-mode}
+minor mode active.  A read-only header at the top shows the action
+being performed; everything below it is freely editable.
+
+@table @kbd
+@item C-c C-c
+Send the composed text to the erlbutt node and close the buffer.
+On success the published message key is shown in the minibuffer.
+@item C-c C-k
+Discard the buffer without sending.
 @end table
 
 @node Customization, , Commands, Top
