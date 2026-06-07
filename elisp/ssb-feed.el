@@ -16,6 +16,8 @@
 ;;   n / p   — step through messages.
 ;;   RET     — open the message at point in a window below.
 ;;   t       — open the tangle thread rooted at the message at point.
+;;   F / U   — follow / unfollow the author at point.
+;;   B       — block the author at point (asks for confirmation).
 ;;
 ;; Thread navigation (ssb-thread-mode):
 ;;   The thread buffer shows {Author, MsgKey} entries indented by depth.
@@ -428,6 +430,39 @@ ROOT-KEY is required for replies.  HEADER is shown read-only at the top."
   (interactive)
   (kill-buffer (current-buffer)))
 
+;;; Social actions
+
+(defun ssb-follow ()
+  "Follow the author at point."
+  (interactive)
+  (let ((author (get-text-property (point) 'ssb-author)))
+    (if (not author)
+        (message "No author at point")
+      (erl-rpc (lambda (reply) (message "Followed: %s" (elt reply 1)))
+               nil ssb-node 'maxbutt 'follow
+               (list (erl-binary author))))))
+
+(defun ssb-unfollow ()
+  "Unfollow the author at point."
+  (interactive)
+  (let ((author (get-text-property (point) 'ssb-author)))
+    (if (not author)
+        (message "No author at point")
+      (erl-rpc (lambda (reply) (message "Unfollowed: %s" (elt reply 1)))
+               nil ssb-node 'maxbutt 'unfollow
+               (list (erl-binary author))))))
+
+(defun ssb-block ()
+  "Block the author at point (asks for confirmation)."
+  (interactive)
+  (let ((author (get-text-property (point) 'ssb-author)))
+    (if (not author)
+        (message "No author at point")
+      (when (yes-or-no-p (format "Block %s? " (ssb--short-id author)))
+        (erl-rpc (lambda (reply) (message "Blocked: %s" (elt reply 1)))
+                 nil ssb-node 'maxbutt 'block
+                 (list (erl-binary author)))))))
+
 (defun ssb-vote-like ()
   "Send a +1 like vote for the message at point."
   (interactive)
@@ -462,7 +497,10 @@ ROOT-KEY is required for replies.  HEADER is shown read-only at the top."
   (define-key map (kbd "f")   #'ssb-browse-author-feed)
   (define-key map (kbd "r")   #'ssb-reply)
   (define-key map (kbd "+")   #'ssb-vote-like)
-  (define-key map (kbd "-")   #'ssb-vote-unlike))
+  (define-key map (kbd "-")   #'ssb-vote-unlike)
+  (define-key map (kbd "F")   #'ssb-follow)
+  (define-key map (kbd "U")   #'ssb-unfollow)
+  (define-key map (kbd "B")   #'ssb-block))
 
 (define-derived-mode ssb-thread-mode special-mode "SSB-Thread"
   "Major mode for viewing a Plumtree/tangle discussion thread.
@@ -477,7 +515,10 @@ ROOT-KEY is required for replies.  HEADER is shown read-only at the top."
   (define-key map (kbd "f")   #'ssb-browse-author-feed)
   (define-key map (kbd "r")   #'ssb-reply)
   (define-key map (kbd "+")   #'ssb-vote-like)
-  (define-key map (kbd "-")   #'ssb-vote-unlike))
+  (define-key map (kbd "-")   #'ssb-vote-unlike)
+  (define-key map (kbd "F")   #'ssb-follow)
+  (define-key map (kbd "U")   #'ssb-unfollow)
+  (define-key map (kbd "B")   #'ssb-block))
 
 (provide 'ssb-feed)
 ;;; ssb-feed.el ends here
