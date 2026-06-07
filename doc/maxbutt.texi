@@ -56,6 +56,7 @@ Commands
 * Browsing Feeds::              Fetching and navigating a feed.
 * Thread Tracing::              Following tangle threads.
 * Publishing::                  Writing posts, replies, and votes.
+* Social Actions::              Following, unfollowing, and blocking feeds.
 
 Customization
 
@@ -105,6 +106,7 @@ Some background on Maxbutt, why we decided to build it, and what we hope to achi
 * Browsing Feeds::
 * Thread Tracing::
 * Publishing::
+* Social Actions::
 @end menu
 
 @node Browsing Feeds, Thread Tracing, Commands, Commands
@@ -130,12 +132,20 @@ Move to the previous message.
 Open the message at point in a window below.
 @item t
 Trace the tangle thread rooted at the message at point.
+@item f
+Browse the feed of the author at point.
 @item r
 Reply to the message at point (@pxref{Publishing}).
 @item +
 Send a like vote for the message at point.
 @item -
 Send an unlike vote for the message at point.
+@item F
+Follow the author at point (@pxref{Social Actions}).
+@item U
+Unfollow the author at point (@pxref{Social Actions}).
+@item B
+Block the author at point (asks for confirmation) (@pxref{Social Actions}).
 @end table
 @end deffn
 
@@ -172,15 +182,23 @@ Collapse or expand the subtree rooted at the entry at point.
 The cursor stays in place.
 @item t
 Same as @kbd{c} — toggle collapse/expand of the subtree at point.
+@item f
+Browse the feed of the author at point.
 @item r
 Reply to the message at point (@pxref{Publishing}).
 @item +
 Send a like vote for the message at point.
 @item -
 Send an unlike vote for the message at point.
+@item F
+Follow the author at point (@pxref{Social Actions}).
+@item U
+Unfollow the author at point (@pxref{Social Actions}).
+@item B
+Block the author at point (asks for confirmation) (@pxref{Social Actions}).
 @end table
 
-@node Publishing, , Thread Tracing, Commands
+@node Publishing, Social Actions, Thread Tracing, Commands
 @section Publishing
 
 @deffn Command ssb-post
@@ -224,6 +242,31 @@ On success the published message key is shown in the minibuffer.
 @item C-c C-k
 Discard the buffer without sending.
 @end table
+
+@node Social Actions, , Publishing, Commands
+@section Social Actions
+
+These commands publish SSB @code{contact} messages expressing your
+relationship to another feed.  All three read the author from the
+@code{ssb-author} text property at point, so they work from any line
+in a feed or thread buffer.
+
+@deffn Command ssb-follow
+Follow the author at point.  Publishes a contact message with
+@code{following: true}.  Bound to @kbd{F} in feed and thread buffers.
+@end deffn
+
+@deffn Command ssb-unfollow
+Unfollow the author at point.  Publishes a contact message with
+@code{following: false}.  Bound to @kbd{U} in feed and thread buffers.
+@end deffn
+
+@deffn Command ssb-block
+Block the author at point.  Publishes a contact message with
+@code{blocking: true} and @code{following: false}.  Asks for
+@code{yes-or-no-p} confirmation before publishing.  Bound to @kbd{B}
+in feed and thread buffers.
+@end deffn
 
 @node Customization, , Commands, Top
 @chapter Customization
