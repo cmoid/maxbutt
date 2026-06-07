@@ -19,6 +19,9 @@
          post/1,
          reply/2,
          vote/2,
+         follow/1,
+         unfollow/1,
+         block/1,
          get_msg/1,
          get_msg_text/1,
          log/0,
@@ -90,6 +93,28 @@ vote(MsgKey, Value) when Value =:= 1 orelse Value =:= -1 ->
                 {~"vote",  {[{~"link",  MsgKey},
                               {~"value", Value},
                               {~"expression", case Value of 1 -> ~"Like"; _ -> ~"Unlike" end}]}}]},
+    our_feed_post(Content).
+
+%% Follow a feed. Publishes a contact message with following:true.
+follow(FeedId) when is_binary(FeedId) ->
+    Content = {[{~"type",      ~"contact"},
+                {~"contact",   FeedId},
+                {~"following", true}]},
+    our_feed_post(Content).
+
+%% Unfollow a feed. Publishes a contact message with following:false.
+unfollow(FeedId) when is_binary(FeedId) ->
+    Content = {[{~"type",      ~"contact"},
+                {~"contact",   FeedId},
+                {~"following", false}]},
+    our_feed_post(Content).
+
+%% Block a feed. Publishes a contact message with blocking:true and following:false.
+block(FeedId) when is_binary(FeedId) ->
+    Content = {[{~"type",      ~"contact"},
+                {~"contact",   FeedId},
+                {~"following", false},
+                {~"blocking",  true}]},
     our_feed_post(Content).
 
 %% Fetch a message by its key. Returns the #message{} record or {error, not_found}.
