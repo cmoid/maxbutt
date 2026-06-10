@@ -130,10 +130,12 @@ Move to the next message and display its content below.
 Move to the previous message.
 @item @key{RET}
 Open the message at point in a window below.
+@item g
+Refresh: refetch the feed from the node and re-render the buffer.
 @item t
 Trace the tangle thread rooted at the message at point.
 @item f
-Browse the feed of the author at point.
+Browse the feed of the author at point in its own buffer.
 @item r
 Reply to the message at point (@pxref{Publishing}).
 @item +
@@ -146,7 +148,16 @@ Follow the author at point (@pxref{Social Actions}).
 Unfollow the author at point (@pxref{Social Actions}).
 @item B
 Block the author at point (asks for confirmation) (@pxref{Social Actions}).
+@item W
+List who the author at point follows (@pxref{Social Actions}).
 @end table
+@end deffn
+
+@deffn Command ssb-refresh-feed
+Refetch the feed shown in the current buffer with the same message
+limit it was originally fetched with, and re-render it.  Newly
+replicated messages appear at the top.  Bound to @kbd{g} in feed
+buffers.
 @end deffn
 
 @deffn Command ssb-my-id
@@ -183,7 +194,8 @@ The cursor stays in place.
 @item t
 Same as @kbd{c} — toggle collapse/expand of the subtree at point.
 @item f
-Browse the feed of the author at point.
+Browse the feed of the author at point in its own buffer.  Works with
+point anywhere on the entry's line.
 @item r
 Reply to the message at point (@pxref{Publishing}).
 @item +
@@ -196,6 +208,8 @@ Follow the author at point (@pxref{Social Actions}).
 Unfollow the author at point (@pxref{Social Actions}).
 @item B
 Block the author at point (asks for confirmation) (@pxref{Social Actions}).
+@item W
+List who the author at point follows (@pxref{Social Actions}).
 @end table
 
 @node Publishing, Social Actions, Thread Tracing, Commands
@@ -266,6 +280,33 @@ Block the author at point.  Publishes a contact message with
 @code{blocking: true} and @code{following: false}.  Asks for
 @code{yes-or-no-p} confirmation before publishing.  Bound to @kbd{B}
 in feed and thread buffers.
+@end deffn
+
+@deffn Command ssb-following &optional feed-id
+List the feeds @var{feed-id} currently follows, one per line, with
+the profile name first when the feed has set one.  Interactively,
+@var{feed-id} is the author at point when there is one, else the feed
+shown in the current buffer; with neither it falls back to the local
+node's own feed.  The list is served from erlbutt's maintained follow
+graph, so it reflects all follow and unfollow messages stored so far.
+Bound to @kbd{W} in feed and thread buffers.
+
+In the resulting @code{ssb-following-mode} buffer:
+
+@table @kbd
+@item n / p
+Move between entries.
+@item RET / f
+Browse the feed at point.
+@item W
+Drill into who the feed at point follows.
+@item g
+Refresh the list.
+@item U
+Unfollow the feed at point.
+@item B
+Block the feed at point (asks for confirmation).
+@end table
 @end deffn
 
 @node Customization, , Commands, Top
