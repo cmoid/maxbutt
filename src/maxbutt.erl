@@ -16,6 +16,8 @@
 -export([browse_feed/2,
          my_id/0,
          profile_name/1,
+         following/0,
+         following/1,
          post/1,
          reply/2,
          vote/2,
@@ -65,12 +67,19 @@ my_id() ->
     keys:pub_key_disp().
 
 %% Return the display name from a feed's own profile (most recent self-about
-%% with a name field), or undefined if none has been set.
+%% with a name field), or undefined if none has been set.  Served from the
+%% friends name index, which loads lazily and is updated at message ingest.
 profile_name(FeedId) when is_binary(FeedId) ->
-    case utils:find_or_create_feed_pid(FeedId) of
-        bad -> undefined;
-        Pid -> ssb_feed:profile_name(Pid)
-    end.
+    friends:name(FeedId).
+
+%% Feeds the local node follows, as {FeedId, Name} pairs sorted by id.
+%% Name is undefined when the feed has not set one.
+following() ->
+    following(keys:pub_key_disp()).
+
+%% Feeds FeedId follows, as {FeedId, Name} pairs sorted by id.
+following(FeedId) when is_binary(FeedId) ->
+    [{Id, friends:name(Id)} || Id <- lists:sort(friends:direct_follows(FeedId))].
 
 %% Publish a text post. Returns {ok, Key} or {error, Reason}.
 post(Text) when is_binary(Text) ->

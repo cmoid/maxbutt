@@ -15,9 +15,21 @@
 ;;   M-x ssb-browse-feed  RET  @<pubkey>=.ed25519  RET  [limit RET]
 ;;   n / p   — step through messages.
 ;;   RET     — open the message at point in a window below.
+;;   g       — refresh: refetch the feed and re-render the buffer.
 ;;   t       — open the tangle thread rooted at the message at point.
+;;   f       — browse the feed of the author at point in its own buffer.
 ;;   F / U   — follow / unfollow the author at point.
 ;;   B       — block the author at point (asks for confirmation).
+;;   W       — list who the author at point (or this feed) follows;
+;;             falls back to the local node's own follows (ssb-following).
+;;
+;; Following list (ssb-following-mode):
+;;   One line per followed feed, profile name first when known.
+;;   n / p   — step through entries.
+;;   RET / f — browse the feed at point.
+;;   W       — drill into who the feed at point follows.
+;;   g       — refresh the list.
+;;   U / B   — unfollow / block the feed at point.
 ;;
 ;; Thread navigation (ssb-thread-mode):
 ;;   The thread buffer shows {Author, MsgKey} entries indented by depth.
@@ -25,6 +37,7 @@
 ;;   n / p   — step through thread entries.
 ;;   RET     — fetch and display the message at point in a window below.
 ;;   c / t   — collapse or expand the subtree at point in place.
+;;   f       — browse the feed of the author at point in its own buffer.
 
 (require 'erl)
 (require 'erl-service)
@@ -68,10 +81,24 @@ LIMIT defaults to `ssb-browse-limit'; prompts interactively for both."
    (list (read-string "SSB Feed ID (@...=.ed25519): ")
          (read-number "Message limit: " ssb-browse-limit)))
   (let ((n (or limit ssb-browse-limit)))
-    (erl-rpc #'ssb--display-feed (list feed-id)
+    (erl-rpc #'ssb--display-feed (list feed-id n)
              ssb-node
              'maxbutt 'browse_feed
              (list (erl-binary feed-id) n))))
+
+(defvar-local ssb--feed-id nil
+  "Feed id shown in this buffer, used by `ssb-refresh-feed'.")
+
+(defvar-local ssb--feed-limit nil
+  "Message limit used to fetch this buffer's feed.")
+
+(defun ssb-refresh-feed ()
+  "Refetch the feed shown in the current buffer and re-render it."
+  (interactive)
+  (if (not ssb--feed-id)
+      (message "No feed to refresh")
+    (message "Refreshing %s..." (ssb--short-id ssb--feed-id))
+    (ssb-browse-feed ssb--feed-id ssb--feed-limit)))
 
 (defun ssb-my-id ()
   "Show the local erlbutt node's own feed ID in the minibuffer."
@@ -81,6 +108,51 @@ LIMIT defaults to `ssb-browse-limit'; prompts interactively for both."
            nil
            ssb-node
            'maxbutt 'my_id '()))
+
+(defun ssb-following (&optional feed-id)
+  "List the feeds FEED-ID follows, with profile names.
+Interactively, FEED-ID is the author at point when there is one, else
+the feed shown in the current buffer; with neither (e.g. M-x from an
+unrelated buffer) it falls back to the local node's own feed."
+  (interactive (list (or (ssb--author-at-point) ssb--feed-id)))
+  (if feed-id
+      (erl-rpc #'ssb--display-following (list feed-id)
+               ssb-node 'maxbutt 'following (list (erl-binary feed-id)))
+    (erl-rpc #'ssb--display-following nil
+             ssb-node 'maxbutt 'following '())))
+
+(defun ssb-refresh-following ()
+  "Refetch the following list shown in the current buffer."
+  (interactive)
+  (ssb-following ssb--feed-id))
+
+(defun ssb--display-following (reply &optional feed-id)
+  "Render REPLY (from maxbutt:following/0,1) into the *ssb-following* buffer.
+Each entry is a {FeedId, Name} tuple; Name is the symbol `undefined'
+when the feed has not set a profile name.  FEED-ID is the queried feed,
+nil for the local node's own."
+  (let ((buf (get-buffer-create "*ssb-following*")))
+    (with-current-buffer buf
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert "Following: " (or feed-id "(this node)") "\n")
+        (insert (make-string 72 ?-) "\n\n")
+        (if (null reply)
+            (insert "(not following anyone)\n")
+          (dolist (entry reply)
+            (let* ((id    (elt entry 0))
+                   (name  (elt entry 1))
+                   (label (if (and (stringp name) (not (string= name "")))
+                              (decode-coding-string name 'utf-8 t)
+                            ""))
+                   (start (point)))
+              (insert (format "%-24s %s\n" label id))
+              (put-text-property start (1- (point)) 'ssb-author id))))
+        ;; The major-mode switch kills buffer-locals, so set them after it.
+        (ssb-following-mode)
+        (setq ssb--feed-id feed-id)
+        (goto-char (point-min))))
+    (pop-to-buffer buf)))
 
 ;;; Navigation
 
@@ -131,8 +203,9 @@ Shows the text field as markdown when available, raw JSON otherwise."
 
 ;;; Internal — RPC callback and rendering
 
-(defun ssb--display-feed (reply feed-id)
-  "Render REPLY (from maxbutt:browse_feed) into a feed buffer."
+(defun ssb--display-feed (reply feed-id &optional limit)
+  "Render REPLY (from maxbutt:browse_feed) into a feed buffer.
+LIMIT is remembered buffer-locally so `ssb-refresh-feed' can refetch."
   (let ((buf (get-buffer-create (format "*ssb %s*" (ssb--short-id feed-id)))))
     (with-current-buffer buf
       (let ((inhibit-read-only t))
@@ -147,12 +220,17 @@ Shows the text field as markdown when available, raw JSON otherwise."
          (t
           (dolist (msg reply)
             (ssb--insert-msg msg))))
+        ;; The major-mode switch kills buffer-locals, so set them after it.
         (ssb-feed-mode)
+        (setq ssb--feed-id feed-id
+              ssb--feed-limit limit)
         (goto-char (point-min))))
     (pop-to-buffer buf))
   ;; Fetch the profile name asynchronously and update the header.
-  (erl-rpc (lambda (name) (ssb--update-feed-header feed-id name))
-           nil ssb-node 'maxbutt 'profile_name
+  ;; The file is dynamically bound, so the callback cannot close over
+  ;; feed-id — pass it through erl-rpc's callback args instead.
+  (erl-rpc (lambda (name fid) (ssb--update-feed-header fid name))
+           (list feed-id) ssb-node 'maxbutt 'profile_name
            (list (erl-binary feed-id))))
 
 (defun ssb--update-feed-header (feed-id name)
@@ -168,10 +246,18 @@ Shows the text field as markdown when available, raw JSON otherwise."
                 (end-of-line)
                 (insert (format "  [%s]" (decode-coding-string name 'utf-8 t)))))))))))
 
+(defun ssb--author-at-point ()
+  "Author id of the entry on the current line, or nil.
+Falls back to the line start so the command works with point anywhere
+on the line, including at end of line where the property is absent."
+  (let ((author (or (get-text-property (point) 'ssb-author)
+                    (get-text-property (line-beginning-position) 'ssb-author))))
+    (and (stringp author) author)))
+
 (defun ssb-browse-author-feed ()
-  "Browse the feed of the author at point."
+  "Browse the feed of the author on the current line in its own buffer."
   (interactive)
-  (let ((author (get-text-property (point) 'ssb-author)))
+  (let ((author (ssb--author-at-point)))
     (if author
         (ssb-browse-feed author ssb-browse-limit)
       (message "No author at point"))))
@@ -435,7 +521,7 @@ ROOT-KEY is required for replies.  HEADER is shown read-only at the top."
 (defun ssb-follow ()
   "Follow the author at point."
   (interactive)
-  (let ((author (get-text-property (point) 'ssb-author)))
+  (let ((author (ssb--author-at-point)))
     (if (not author)
         (message "No author at point")
       (erl-rpc (lambda (reply) (message "Followed: %s" (elt reply 1)))
@@ -445,7 +531,7 @@ ROOT-KEY is required for replies.  HEADER is shown read-only at the top."
 (defun ssb-unfollow ()
   "Unfollow the author at point."
   (interactive)
-  (let ((author (get-text-property (point) 'ssb-author)))
+  (let ((author (ssb--author-at-point)))
     (if (not author)
         (message "No author at point")
       (erl-rpc (lambda (reply) (message "Unfollowed: %s" (elt reply 1)))
@@ -455,7 +541,7 @@ ROOT-KEY is required for replies.  HEADER is shown read-only at the top."
 (defun ssb-block ()
   "Block the author at point (asks for confirmation)."
   (interactive)
-  (let ((author (get-text-property (point) 'ssb-author)))
+  (let ((author (ssb--author-at-point)))
     (if (not author)
         (message "No author at point")
       (when (yes-or-no-p (format "Block %s? " (ssb--short-id author)))
@@ -493,6 +579,7 @@ ROOT-KEY is required for replies.  HEADER is shown read-only at the top."
   (define-key map (kbd "n")   #'ssb-next-message)
   (define-key map (kbd "p")   #'ssb-prev-message)
   (define-key map (kbd "RET") #'ssb--show-current-message)
+  (define-key map (kbd "g")   #'ssb-refresh-feed)
   (define-key map (kbd "t")   #'ssb-show-thread)
   (define-key map (kbd "f")   #'ssb-browse-author-feed)
   (define-key map (kbd "r")   #'ssb-reply)
@@ -500,7 +587,8 @@ ROOT-KEY is required for replies.  HEADER is shown read-only at the top."
   (define-key map (kbd "-")   #'ssb-vote-unlike)
   (define-key map (kbd "F")   #'ssb-follow)
   (define-key map (kbd "U")   #'ssb-unfollow)
-  (define-key map (kbd "B")   #'ssb-block))
+  (define-key map (kbd "B")   #'ssb-block)
+  (define-key map (kbd "W")   #'ssb-following))
 
 (define-derived-mode ssb-thread-mode special-mode "SSB-Thread"
   "Major mode for viewing a Plumtree/tangle discussion thread.
@@ -517,6 +605,21 @@ ROOT-KEY is required for replies.  HEADER is shown read-only at the top."
   (define-key map (kbd "+")   #'ssb-vote-like)
   (define-key map (kbd "-")   #'ssb-vote-unlike)
   (define-key map (kbd "F")   #'ssb-follow)
+  (define-key map (kbd "U")   #'ssb-unfollow)
+  (define-key map (kbd "B")   #'ssb-block)
+  (define-key map (kbd "W")   #'ssb-following))
+
+(define-derived-mode ssb-following-mode special-mode "SSB-Following"
+  "Major mode for the list of feeds the local node follows.
+\\{ssb-following-mode-map}")
+
+(let ((map ssb-following-mode-map))
+  (define-key map (kbd "n")   #'next-line)
+  (define-key map (kbd "p")   #'previous-line)
+  (define-key map (kbd "RET") #'ssb-browse-author-feed)
+  (define-key map (kbd "f")   #'ssb-browse-author-feed)
+  (define-key map (kbd "g")   #'ssb-refresh-following)
+  (define-key map (kbd "W")   #'ssb-following)
   (define-key map (kbd "U")   #'ssb-unfollow)
   (define-key map (kbd "B")   #'ssb-block))
 
