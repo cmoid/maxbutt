@@ -28,7 +28,10 @@
          get_msg_text/1,
          log/0,
          thread/1,
-         thread_from/2]).
+         thread_from/2,
+         dialer/0,
+         dialer/1,
+         dialer_toggle/0]).
 
 %% Return the last Limit messages from FeedId as a list of
 %% {Seq, Key, Author, ContentJson} tuples, newest first.
@@ -215,3 +218,29 @@ flatten_thread({MsgId, Auth}, Depth) ->
 is_post({Props}) when is_list(Props) ->
     proplists:get_value(~"type", Props) =:= ~"post";
 is_post(_) -> false.
+
+%%% Node control ---------------------------------------------------------
+
+%% Current peer-dialer state as {ok, enabled | disabled}.
+dialer() ->
+    {ok, dialer_state()}.
+
+%% Turn automatic peer dialing on or off; returns {ok, NewState}.
+dialer(on)  -> dialer(true);
+dialer(off) -> dialer(false);
+dialer(true) ->
+    ok = peer_dialer:enable(),
+    dialer();
+dialer(false) ->
+    ok = peer_dialer:disable(),
+    dialer().
+
+%% Flip the peer-dialer state; returns {ok, enabled | disabled}.
+dialer_toggle() ->
+    dialer(not peer_dialer:is_enabled()).
+
+dialer_state() ->
+    case peer_dialer:is_enabled() of
+        true  -> enabled;
+        false -> disabled
+    end.
