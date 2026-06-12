@@ -569,6 +569,14 @@ ROOT-KEY is required for replies.  HEADER is shown read-only at the top."
                nil ssb-node 'maxbutt 'vote
                (list (erl-binary key) -1)))))
 
+;;; Node control
+
+(defun ssb-dialer-toggle ()
+  "Toggle automatic peer dialing on the erlbutt node."
+  (interactive)
+  (erl-rpc (lambda (reply) (message "Peer dialer: %s" (elt reply 1)))
+           nil ssb-node 'maxbutt 'dialer_toggle '()))
+
 ;;; Major mode
 
 (define-derived-mode ssb-feed-mode special-mode "SSB-Feed"
@@ -588,7 +596,8 @@ ROOT-KEY is required for replies.  HEADER is shown read-only at the top."
   (define-key map (kbd "F")   #'ssb-follow)
   (define-key map (kbd "U")   #'ssb-unfollow)
   (define-key map (kbd "B")   #'ssb-block)
-  (define-key map (kbd "W")   #'ssb-following))
+  (define-key map (kbd "W")   #'ssb-following)
+  (define-key map (kbd "D")   #'ssb-dialer-toggle))
 
 (define-derived-mode ssb-thread-mode special-mode "SSB-Thread"
   "Major mode for viewing a Plumtree/tangle discussion thread.
@@ -607,7 +616,8 @@ ROOT-KEY is required for replies.  HEADER is shown read-only at the top."
   (define-key map (kbd "F")   #'ssb-follow)
   (define-key map (kbd "U")   #'ssb-unfollow)
   (define-key map (kbd "B")   #'ssb-block)
-  (define-key map (kbd "W")   #'ssb-following))
+  (define-key map (kbd "W")   #'ssb-following)
+  (define-key map (kbd "D")   #'ssb-dialer-toggle))
 
 (define-derived-mode ssb-following-mode special-mode "SSB-Following"
   "Major mode for the list of feeds the local node follows.
@@ -621,7 +631,8 @@ ROOT-KEY is required for replies.  HEADER is shown read-only at the top."
   (define-key map (kbd "g")   #'ssb-refresh-following)
   (define-key map (kbd "W")   #'ssb-following)
   (define-key map (kbd "U")   #'ssb-unfollow)
-  (define-key map (kbd "B")   #'ssb-block))
+  (define-key map (kbd "B")   #'ssb-block)
+  (define-key map (kbd "D")   #'ssb-dialer-toggle))
 
 (provide 'ssb-feed)
 ;;; ssb-feed.el ends here
