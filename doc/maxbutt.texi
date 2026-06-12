@@ -150,6 +150,8 @@ Unfollow the author at point (@pxref{Social Actions}).
 Block the author at point (asks for confirmation) (@pxref{Social Actions}).
 @item W
 List who the author at point follows (@pxref{Social Actions}).
+@item D
+Toggle automatic peer dialing on the node.
 @end table
 @end deffn
 
@@ -162,6 +164,15 @@ buffers.
 
 @deffn Command ssb-my-id
 Display the local erlbutt node's own feed ID in the minibuffer.
+@end deffn
+
+@deffn Command ssb-dialer-toggle
+Toggle the erlbutt node's automatic peer dialing and show the new
+state in the minibuffer.  When disabled, the node stops opening
+outbound connections to LAN and pub peers; inbound connections are
+unaffected.  The startup default comes from the @code{@{peer_dialer,
+Bool@}} entry in @file{ssb.cfg}.  Bound to @kbd{D} in feed, thread,
+and following buffers.
 @end deffn
 
 @node Thread Tracing, Publishing, Browsing Feeds, Commands
@@ -210,6 +221,8 @@ Unfollow the author at point (@pxref{Social Actions}).
 Block the author at point (asks for confirmation) (@pxref{Social Actions}).
 @item W
 List who the author at point follows (@pxref{Social Actions}).
+@item D
+Toggle automatic peer dialing on the node.
 @end table
 
 @node Publishing, Social Actions, Thread Tracing, Commands
