@@ -91,7 +91,7 @@ ${ELISP_SOME_OBJ}: ${ELISP_SOME_SRC}
 		-f batch-byte-compile ${ELISP_COMPILE_ORDER}
 
 ## Info documentation
-doc/distel.info: ${DOC_SRC}
+doc/maxbutt.info: ${DOC_SRC}
 	command -v makeinfo && makeinfo -o $@ $< || echo fail
 
 ## Postscript documentation
