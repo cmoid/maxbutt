@@ -1,13 +1,21 @@
 PACKAGE := maxbutt
 VERSION := $(shell git describe --tags 2> /dev/null)
 
-prefix      = $(HOME)/code/emacs-ext
+## Install location.  Override on the command line, e.g.
+##   make install prefix=/usr/local/share/emacs/site-lisp
+prefix      ?= $(HOME)/.emacs.d
 exec_prefix = ${prefix}
 bindir      = ${exec_prefix}/bin
 datadir     = ${prefix}
 infodir     = ${prefix}/info
 erlc        = erlc
 emacs       = emacs
+
+## markdown-mode is an external build dependency of ssb-feed.el (byte-compile
+## needs it on the load path).  Auto-detect an ELPA install, else fall back to a
+## manual checkout; override with `make MARKDOWN_DIR=/path/to/markdown-mode`.
+MARKDOWN_DIR ?= $(firstword $(wildcard $(HOME)/.emacs.d/elpa/markdown-mode-*) \
+                            $(HOME)/code/emacs-ext/markdown-mode)
 
 ELISP_DIR   = ${datadir}/maxbutt/elisp
 EBIN_DIR    = ${datadir}/maxbutt/ebin
@@ -85,7 +93,7 @@ ${ELISP_SOME_OBJ}: ${ELISP_SOME_SRC}
 	${emacs} -batch \
 		-L "${ERLANG_EMACS_DIR}" \
 		-L elisp \
-		-L "${datadir}/markdown-mode" \
+		-L "${MARKDOWN_DIR}" \
 		--eval "(require 'erlang-start)" \
 		--eval "(setq byte-compile-dynamic-docstrings nil)" \
 		-f batch-byte-compile ${ELISP_COMPILE_ORDER}
@@ -95,10 +103,10 @@ doc/maxbutt.info: ${DOC_SRC}
 	command -v makeinfo && makeinfo -o $@ $< || echo fail
 
 ## Postscript documentation
-doc/distel.ps: doc/maxbutt.dvi
+doc/maxbutt.ps: doc/maxbutt.dvi
 	command -v dvips && dvips -o $@ $< || echo fail
 
-doc/distel.dvi: ${DOC_SRC}
+doc/maxbutt.dvi: ${DOC_SRC}
 	command -v texi2dvi && (cd doc; texi2dvi maxbutt.texi) || echo fail
 
 ########################################
