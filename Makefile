@@ -115,13 +115,6 @@ ${AUTOLOADS}: ${ELISP_SOME_SRC}
 doc/maxbutt.info: ${DOC_SRC}
 	command -v makeinfo && makeinfo -o $@ $< || echo fail
 
-## Postscript documentation
-doc/maxbutt.ps: doc/maxbutt.dvi
-	command -v dvips && dvips -o $@ $< || echo fail
-
-doc/maxbutt.dvi: ${DOC_SRC}
-	command -v texi2dvi && (cd doc; texi2dvi maxbutt.texi) || echo fail
-
 ########################################
 
 clean:
