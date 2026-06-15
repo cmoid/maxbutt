@@ -3,6 +3,8 @@
 
 # Packaging
 .cask
+dist
+elisp/maxbutt-autoloads.el
 
 # Backup files
 *~

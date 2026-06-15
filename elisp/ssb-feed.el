@@ -73,6 +73,7 @@ Can be overridden interactively when invoking the command."
 
 ;;; Public commands
 
+;;;###autoload
 (defun ssb-browse-feed (feed-id &optional limit)
   "Browse the SSB feed FEED-ID from the local erlbutt node.
 FEED-ID should be the full @<pubkey>=.ed25519 string.
@@ -100,6 +101,7 @@ LIMIT defaults to `ssb-browse-limit'; prompts interactively for both."
     (message "Refreshing %s..." (ssb--short-id ssb--feed-id))
     (ssb-browse-feed ssb--feed-id ssb--feed-limit)))
 
+;;;###autoload
 (defun ssb-my-id ()
   "Show the local erlbutt node's own feed ID in the minibuffer."
   (interactive)
@@ -109,6 +111,7 @@ LIMIT defaults to `ssb-browse-limit'; prompts interactively for both."
            ssb-node
            'maxbutt 'my_id '()))
 
+;;;###autoload
 (defun ssb-following (&optional feed-id)
   "List the feeds FEED-ID follows, with profile names.
 Interactively, FEED-ID is the author at point when there is one, else
@@ -469,6 +472,7 @@ ROOT-KEY is required for replies.  HEADER is shown read-only at the top."
         (goto-char (point-max))))
     (pop-to-buffer buf)))
 
+;;;###autoload
 (defun ssb-post ()
   "Compose and publish a new SSB post."
   (interactive)
@@ -571,6 +575,7 @@ ROOT-KEY is required for replies.  HEADER is shown read-only at the top."
 
 ;;; Node control
 
+;;;###autoload
 (defun ssb-dialer-toggle ()
   "Toggle automatic peer dialing on the erlbutt node."
   (interactive)

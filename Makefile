@@ -1,5 +1,8 @@
 PACKAGE := maxbutt
-VERSION := $(shell git describe --tags 2> /dev/null)
+VERSION := $(shell git describe --tags --always 2>/dev/null || echo dev)
+
+DIST     := dist
+DISTNAME := ${PACKAGE}-${VERSION}
 
 ## Install location.  Override on the command line, e.g.
 ##   make install prefix=/usr/local/share/emacs/site-lisp
@@ -49,6 +52,9 @@ ELISP_COMPILE_ORDER := \
 ELISP_SOME_SRC := $(filter-out elisp/maxbutt%.el,${ELISP_SRC})
 ELISP_SOME_OBJ := $(patsubst %.el,%.elc,${ELISP_SOME_SRC})
 
+## Generated autoloads (maxbutt% is filtered out of byte-compilation above).
+AUTOLOADS := elisp/maxbutt-autoloads.el
+
 ## Erlang tools emacs dir (for erlang-mode, needed by distel et al.)
 ERLANG_EMACS_DIR := $(shell erl -eval 'io:format("~s/emacs",[code:lib_dir(tools)])' -s init stop -noshell 2>/dev/null)
 
@@ -56,12 +62,13 @@ DOC_SRC  := doc/maxbutt.texi
 INFO_OBJ := doc/maxbutt.info
 PS_OBJ   := doc/maxbutt.ps
 
-OBJECTS := ${ERL_OBJ} ${ELISP_OBJ} ${INFO_OBJ} ${PS_OBJ}
+OBJECTS := ${ERL_OBJ} ${ELISP_OBJ} ${INFO_OBJ} ${PS_OBJ} ${AUTOLOADS}
 
-base: ebin ${ERL_OBJ} ${ELISP_SOME_OBJ}
-many: ebin ${ERL_OBJ} ${ELISP_OBJ}
+base: ebin ${ERL_OBJ} ${ELISP_SOME_OBJ} ${AUTOLOADS}
+many: ebin ${ERL_OBJ} ${ELISP_OBJ} ${AUTOLOADS}
 info: ${INFO_OBJ}
 erl: ${ERL_OBJ}
+autoloads: ${AUTOLOADS}
 postscript: ${PS_OBJ}
 all: base info postscript
 ebin:
@@ -98,6 +105,12 @@ ${ELISP_SOME_OBJ}: ${ELISP_SOME_SRC}
 		--eval "(setq byte-compile-dynamic-docstrings nil)" \
 		-f batch-byte-compile ${ELISP_COMPILE_ORDER}
 
+## Autoloads — lets users `(require 'maxbutt-autoloads)` and get the ssb-*
+## entry commands as M-x-able autoloads without loading the package up front.
+## Regenerated whenever a source .el changes; scans for ;;;###autoload cookies.
+${AUTOLOADS}: ${ELISP_SOME_SRC}
+	${emacs} -batch --eval "(loaddefs-generate \"elisp\" (expand-file-name \"${AUTOLOADS}\") (list \"maxbutt-autoloads.el\"))"
+
 ## Info documentation
 doc/maxbutt.info: ${DOC_SRC}
 	command -v makeinfo && makeinfo -o $@ $< || echo fail
@@ -116,6 +129,7 @@ clean:
 
 distclean: clean
 	-rm -f *~ */*~ 2>/dev/null
+	-rm -rf ${DIST} 2>/dev/null
 
 install: base
 	@echo "* Installing Emacs Lisp Library"
@@ -137,13 +151,21 @@ info_install: info
 	  install-info --info-dir=${infodir} --section Emacs \
 		       ${infodir}/maxbutt.info
 
-# This needs a bit of upgrading, it's been ages since I've used cvs, does anyone still?
-dist: always distclean
-	cd .. && ln -sf ${PACKAGE} ${PACKAGE}-${VERSION}
-	cd .. && (find ${PACKAGE}-${VERSION} -follow -type f | \
-		  egrep -v '(^attic/)|/CVS/|\.cvsignore|\.rej|\.orig|\#' | \
-		  xargs tar czf ${PACKAGE}-${VERSION}.tar.gz)
-	rm ../${PACKAGE}-${VERSION}
+## Self-contained source+built tarball under dist/ (elisp .el/.elc + autoloads,
+## erlang .beam/.erl, info doc, README, Makefile), plus a sha256.
+dist: base info
+	@rm -rf ${DIST}/${DISTNAME}
+	@mkdir -p ${DIST}/${DISTNAME}/elisp ${DIST}/${DISTNAME}/ebin \
+	          ${DIST}/${DISTNAME}/src ${DIST}/${DISTNAME}/doc
+	cp elisp/*.el elisp/*.elc ${DIST}/${DISTNAME}/elisp/
+	cp ebin/*.beam            ${DIST}/${DISTNAME}/ebin/
+	cp src/*.erl              ${DIST}/${DISTNAME}/src/
+	cp doc/maxbutt.info doc/maxbutt.texi ${DIST}/${DISTNAME}/doc/
+	cp README.md Makefile     ${DIST}/${DISTNAME}/
+	cd ${DIST} && tar czf ${DISTNAME}.tar.gz ${DISTNAME} \
+	  && shasum -a 256 ${DISTNAME}.tar.gz > ${DISTNAME}.tar.gz.sha256
+	@rm -rf ${DIST}/${DISTNAME}
+	@echo "==> ${DIST}/${DISTNAME}.tar.gz"
 
 wc:
 	@echo "* Emacs Lisp"
@@ -154,4 +176,5 @@ wc:
 	@wc -l */*.c | sort -nr
 
 .INTERMEDIATE: doc/maxbutt.dvi
-.PHONY: always
+.PHONY: base many info erl autoloads postscript all dist \
+        install info_install clean distclean wc
