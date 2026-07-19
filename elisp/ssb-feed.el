@@ -459,17 +459,24 @@ ROOT-KEY is required for replies.  HEADER is shown read-only at the top."
     (with-current-buffer buf
       (let ((inhibit-read-only t))
         (erase-buffer)
-        (text-mode)
+        (markdown-mode)
         (ssb-compose-mode 1)
         (setq ssb--compose-action action
               ssb--compose-root-key root-key)
         (when header
           (insert header "\n" (make-string 72 ?-) "\n")
-          (add-text-properties (point-min) (point)
+          ;; Protect the header text, but leave the final newline WITHOUT the
+          ;; read-only property.  That guarantees the editable region always
+          ;; begins right after a normal character, so typing works regardless
+          ;; of `rear-nonsticky' stickiness (which proved fragile — it behaved
+          ;; differently byte-compiled vs. interpreted).
+          (add-text-properties (point-min) (1- (point))
                                '(read-only t front-sticky (read-only)
                                  rear-nonsticky (read-only))))
         (setq ssb--compose-start (point-marker))
-        (goto-char (point-max))))
+        (goto-char (point-max))
+        ;; And clear buffer-read-only in case a markdown-mode-hook enabled it.
+        (setq buffer-read-only nil)))
     (pop-to-buffer buf)))
 
 ;;;###autoload
