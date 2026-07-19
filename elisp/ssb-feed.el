@@ -112,6 +112,20 @@ LIMIT defaults to `ssb-browse-limit'; prompts interactively for both."
            'maxbutt 'my_id '()))
 
 ;;;###autoload
+(defun ssb-home ()
+  "Browse the local erlbutt node's own feed — your posting home base.
+Fetches this node's own feed id and opens it in a feed buffer, so you
+can post, reply (r), list who you follow (W), fetch another author's
+feed (f), and so on, without having to look up and paste your id.
+A good command to run first when starting maxbutt."
+  (interactive)
+  (erl-rpc (lambda (reply)
+             (ssb-browse-feed reply ssb-browse-limit))
+           nil
+           ssb-node
+           'maxbutt 'my_id '()))
+
+;;;###autoload
 (defun ssb-following (&optional feed-id)
   "List the feeds FEED-ID follows, with profile names.
 Interactively, FEED-ID is the author at point when there is one, else
