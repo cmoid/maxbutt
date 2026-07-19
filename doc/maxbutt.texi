@@ -166,6 +166,16 @@ buffers.
 Display the local erlbutt node's own feed ID in the minibuffer.
 @end deffn
 
+@deffn Command ssb-home
+Open the local erlbutt node's own feed in an @code{ssb-feed-mode}
+buffer.  This is the handiest command to run first: it looks up your
+own feed ID and browses it for you, so you land in a buffer where you
+can publish (@pxref{Publishing}), list who you follow with @kbd{W},
+fetch another author's feed with @kbd{f}, and so on --- without having
+to look up and paste your ID.  The feed opens with @code{ssb-browse-limit}
+messages and the same key bindings as @code{ssb-browse-feed}.
+@end deffn
+
 @deffn Command ssb-dialer-toggle
 Toggle the erlbutt node's automatic peer dialing and show the new
 state in the minibuffer.  When disabled, the node stops opening
