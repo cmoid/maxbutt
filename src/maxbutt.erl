@@ -6,12 +6,25 @@
 %% Functions return simple terms that serialise cleanly over Erlang
 %% distribution and are easy to destructure in elisp.
 %%
+%% maxbutt runs INSIDE the node's BEAM (loaded via distel), which is what
+%% makes it useful and also what makes it fragile: it can reach anything,
+%% so it has historically reached into whatever module happened to hold
+%% the data.  When erlbutt reorganised its views in July 2026 this module
+%% broke silently — `friends` had become `ssb_social_graph`, the display
+%% name had moved to `ssb_feed_meta`, and `log/0` was reading a global
+%% `log.offset` that no longer gets written, returning nothing at all.
+%%
+%% So: reads go through the core views' public APIs, and anything that
+%% CONTROLS the node goes through the admin namespace (apps/admin) — the
+%% same handlers sbutt and any other client use, just called in-process
+%% rather than over muxrpc.  See doc/persistence.md §5 in erlbutt.
+%%
 %% Thread traversal is lazy: thread/1 and thread_from/2 return only the
 %% tree structure {Key, Author, Depth} without fetching message content.
 %% Call get_msg_text/1 on demand when the user selects a specific entry.
 -module(maxbutt).
 
--include("../erlbutt/apps/ssb/include/ssb.hrl").
+-include_lib("ssb/include/ssb.hrl").
 
 -export([browse_feed/2,
          my_id/0,
@@ -31,7 +44,9 @@
          thread_from/2,
          dialer/0,
          dialer/1,
-         dialer_toggle/0]).
+         dialer_toggle/0,
+         status/0,
+         views/0]).
 
 %% Return the last Limit messages from FeedId as a list of
 %% {Seq, Key, Author, ContentJson} tuples, newest first.
@@ -69,11 +84,11 @@ browse_feed(FeedId, Limit) ->
 my_id() ->
     keys:pub_key_disp().
 
-%% Return the display name from a feed's own profile (most recent self-about
-%% with a name field), or undefined if none has been set.  Served from the
-%% friends name index, which loads lazily and is updated at message ingest.
+%% Return the display name a feed has set for itself, or undefined.
+%% Served from the ssb_feed_meta core view, which holds the latest
+%% self-asserted value of every `about` field, not just the name.
 profile_name(FeedId) when is_binary(FeedId) ->
-    friends:name(FeedId).
+    ssb_feed_meta:name(FeedId).
 
 %% Feeds the local node follows, as {FeedId, Name} pairs sorted by id.
 %% Name is undefined when the feed has not set one.
@@ -82,7 +97,8 @@ following() ->
 
 %% Feeds FeedId follows, as {FeedId, Name} pairs sorted by id.
 following(FeedId) when is_binary(FeedId) ->
-    [{Id, friends:name(Id)} || Id <- lists:sort(friends:direct_follows(FeedId))].
+    [{Id, profile_name(Id)}
+     || Id <- lists:sort(ssb_social_graph:direct_follows(FeedId))].
 
 %% Publish a text post. Returns {ok, Key} or {error, Reason}.
 post(Text) when is_binary(Text) ->
@@ -138,12 +154,18 @@ get_msg(Key) when is_binary(Key) ->
             ssb_feed:fetch_msg(FeedPid, Key)
     end.
 
-%% Return all messages across all feeds as {Key, Author, ContentJson} triples.
-%% Ordered per-feed by sequence; feed order is unspecified.
+%% Return every stored message as {Key, Author, ContentJson} triples, in
+%% ARRIVAL order across all feeds.
+%%
+%% This used to fold a global <repo>/log.offset.  That file was retired
+%% when the ingest journal landed and is no longer written, so this
+%% quietly returned [] on any node built since — the failure mode that
+%% motivated porting this module.  The journal is the replacement: it
+%% records {FeedId, Seq} refs in arrival order and resolves bodies from
+%% the per-feed store.
 log() ->
-    LogFile = <<(config:ssb_repo_loc())/binary, "log.offset">>,
     lists:reverse(
-        utils:fold_log_file(
+        ingest_journal:stream_messages(
             fun(MsgData, Acc) ->
                 try
                     #message{id = Key, author = Author, content = Content} =
@@ -152,7 +174,7 @@ log() ->
                     [{Key, Author, ContentJson} | Acc]
                 catch _:_ -> Acc
                 end
-            end, [], LogFile)).
+            end, [])).
 
 our_feed_post(Content) ->
     OurId   = keys:pub_key_disp(),
@@ -220,6 +242,10 @@ is_post({Props}) when is_list(Props) ->
 is_post(_) -> false.
 
 %%% Node control ---------------------------------------------------------
+%%%
+%%% Routed through the admin namespace rather than calling peer_dialer and
+%%% friends directly, so there is one definition of what "the control
+%%% plane" is and maxbutt inherits new admin methods for free.
 
 %% Current peer-dialer state as {ok, enabled | disabled}.
 dialer() ->
@@ -229,18 +255,67 @@ dialer() ->
 dialer(on)  -> dialer(true);
 dialer(off) -> dialer(false);
 dialer(true) ->
-    ok = peer_dialer:enable(),
+    _ = admin([~"dialer", ~"enable"]),
     dialer();
 dialer(false) ->
-    ok = peer_dialer:disable(),
+    _ = admin([~"dialer", ~"disable"]),
     dialer().
 
 %% Flip the peer-dialer state; returns {ok, enabled | disabled}.
 dialer_toggle() ->
-    dialer(not peer_dialer:is_enabled()).
+    dialer(dialer_state() =/= enabled).
 
 dialer_state() ->
-    case peer_dialer:is_enabled() of
-        true  -> enabled;
-        false -> disabled
+    case admin([~"dialer", ~"status"]) of
+        {ok, {Props}} ->
+            case proplists:get_value(~"enabled", Props) of
+                true -> enabled;
+                _    -> disabled
+            end;
+        _ ->
+            unknown
+    end.
+
+%% Node summary: [{Key, Value}] with binary keys — id, uptimeMs, feeds,
+%% dialerEnabled, replicationHops, archiveLength, isRoom, networkIds,
+%% views.
+status() ->
+    case admin([~"status"]) of
+        {ok, {Props}} -> Props;
+        Err           -> Err
+    end.
+
+%% Registered views as {Module, Class, Version, Feeds, CaughtUp} tuples,
+%% core views first.  `false` for CaughtUp means the view is still
+%% folding and its answers are incomplete.
+views() ->
+    case admin([~"views", ~"list"]) of
+        {ok, Rows} when is_list(Rows) ->
+            [{binary_to_atom(gv(~"module", P), utf8),
+              binary_to_atom(gv(~"class", P), utf8),
+              gv(~"version", P),
+              gv(~"feeds", P),
+              gv(~"caughtUp", P)} || {P} <- Rows];
+        Err ->
+            Err
+    end.
+
+gv(Key, Props) ->
+    proplists:get_value(Key, Props).
+
+%% Call an admin method in-process.  maxbutt is in the node's BEAM, so it
+%% does not need muxrpc to reach the admin app — but it should go through
+%% the same handler every other client uses.  The caller is `owner`, which
+%% is what a local operator is.
+admin(Path) ->
+    admin(Path, []).
+
+admin(Path, Args) ->
+    try admin_rpc:handle_rpc([~"admin" | Path], Args,
+                             #{class => owner, feed_id => keys:pub_key_disp()}) of
+        {reply, Reply}  -> {ok, Reply};
+        {error, Reason} -> {error, Reason};
+        Other           -> {error, Other}
+    catch Class:Reason ->
+            {error, {Class, Reason}}
     end.

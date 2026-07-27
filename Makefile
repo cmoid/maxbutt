@@ -14,6 +14,12 @@ infodir     = ${prefix}/info
 erlc        = erlc
 emacs       = emacs
 
+## maxbutt compiles against erlbutt's headers and loads into its BEAM, so
+## the built erlbutt apps have to be on the code path at compile time.
+## Overridable: `make ERLBUTT=/path/to/erlbutt`.
+ERLBUTT  ?= ../erlbutt
+ERL_LIBS := $(ERLBUTT)/_build/default/lib
+
 ## markdown-mode is an external build dependency of ssb-feed.el (byte-compile
 ## needs it on the load path).  Auto-detect an ELPA install, else fall back to a
 ## manual checkout; override with `make MARKDOWN_DIR=/path/to/markdown-mode`.
@@ -91,7 +97,7 @@ release_patch:
 
 ## Erlang
 ebin/%.beam: src/%.erl
-	${erlc} -W -o ebin +debug_info $<
+	ERL_LIBS=${ERL_LIBS} ${erlc} -W -o ebin +debug_info $<
 
 ## Elisp — compile all in one session, in dependency order, without loading
 ## ~/.emacs (which would pull in stale .elc files and corrupt doc-string offsets).
