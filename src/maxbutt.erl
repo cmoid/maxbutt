@@ -46,7 +46,10 @@
          dialer/1,
          dialer_toggle/0,
          status/0,
-         views/0]).
+         views/0,
+         export/1,
+         export/2,
+         import/1]).
 
 %% Return the last Limit messages from FeedId as a list of
 %% {Seq, Key, Author, ContentJson} tuples, newest first.
@@ -302,6 +305,74 @@ views() ->
 
 gv(Key, Props) ->
     proplists:get_value(Key, Props).
+
+%%% Export / import ------------------------------------------------------
+%%%
+%%% admin.export / admin.import (erlbutt doc/ops/export-import.md).  Dir
+%%% is a path on the NODE's disk, and must be absolute.  Both answer
+%%% {ok, Summary} with Summary a short human-readable text, multi-line
+%%% when there is something to report per feed, or {error, Reason}.
+%%%
+%%% Both run to completion before replying.  For a big export, sbutt
+%%% export is better: it reads the store without going through the node.
+
+%% Export our own feed and its blobs into a new directory Dir.
+export(Dir) ->
+    export(Dir, own).
+
+%% Export Feeds (a list of feed ids) instead of our own.
+export(Dir, Feeds) ->
+    Args = case Feeds of
+               own -> [to_bin(Dir)];
+               _   -> [to_bin(Dir), [to_bin(F) || F <- Feeds]]
+           end,
+    case admin([~"export"], Args) of
+        {ok, {json, Json}} -> {ok, export_summary(to_bin(Dir), json:decode(Json))};
+        {error, _} = E     -> E
+    end.
+
+%% Verify the bundle in Dir and store what is new.
+import(Dir) ->
+    case admin([~"import"], [to_bin(Dir)]) of
+        {ok, {json, Json}} -> {ok, import_summary(to_bin(Dir), json:decode(Json))};
+        {error, _} = E     -> E
+    end.
+
+export_summary(Dir, #{~"feeds" := Feeds, ~"blobs" := Blobs,
+                      ~"missingBlobs" := Missing, ~"refused" := Refused}) ->
+    Msgs = lists:sum([To || #{~"to" := To} <- Feeds]),
+    iolist_to_binary(
+      [io_lib:format("Exported ~b feed(s), ~b message(s), ~b blob(s) to ",
+                     [length(Feeds), Msgs, length(Blobs)]),
+       Dir,
+       case Missing of
+           [] -> "";
+           _  -> io_lib:format(" (~b referenced blob(s) not held)",
+                               [length(Missing)])
+       end,
+       [["\nNot exported: ", Id, ": ", Why]
+        || #{~"id" := Id, ~"reason" := Why} <- Refused]]).
+
+import_summary(Dir, #{~"feeds" := Feeds, ~"blobs" := Blobs}) ->
+    #{~"stored" := Stored, ~"present" := Present,
+      ~"missing" := Missing, ~"bad" := Bad} = Blobs,
+    iolist_to_binary(
+      ["Imported from ", Dir,
+       [["\n", Id, " ", Status,
+         io_lib:format(": +~b (held ~b)",
+                       [maps:get(~"added", F, 0), maps:get(~"held", F, 0)]),
+         case F of
+             #{~"reason" := Why} -> ["  ", Why];
+             _                   -> ""
+         end]
+        || #{~"id" := Id, ~"status" := Status} = F <- Feeds],
+       io_lib:format("\nblobs: ~b stored, ~b already held, ~b missing, ~b BAD",
+                     [Stored, Present, length(Missing), length(Bad)])]).
+
+%% distel hands elisp strings over as lists or binaries depending on how
+%% they were built; admin wants binaries.
+to_bin(B) when is_binary(B) -> B;
+to_bin(L) when is_list(L)   -> unicode:characters_to_binary(L).
 
 %% Call an admin method in-process.  maxbutt is in the node's BEAM, so it
 %% does not need muxrpc to reach the admin app — but it should go through
