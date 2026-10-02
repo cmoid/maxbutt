@@ -31,6 +31,11 @@
 ;;   g       — refresh the list.
 ;;   U / B   — unfollow / block the feed at point.
 ;;
+;; Export / import (erlbutt doc/ops/export-import.md):
+;;   M-x ssb-export — write your feed and its blobs to a new directory.
+;;   M-x ssb-import — verify a bundle and load what is new.
+;;   Both directories are on the node's machine.
+;;
 ;; Thread navigation (ssb-thread-mode):
 ;;   The thread buffer shows {Author, MsgKey} entries indented by depth.
 ;;   Message content is fetched lazily — only when you ask for it.
@@ -602,6 +607,44 @@ ROOT-KEY is required for replies.  HEADER is shown read-only at the top."
   (interactive)
   (erl-rpc (lambda (reply) (message "Peer dialer: %s" (elt reply 1)))
            nil ssb-node 'maxbutt 'dialer_toggle '()))
+
+;;;###autoload
+(defun ssb-export (dir)
+  "Export your own feed and its blobs into the new directory DIR.
+DIR is a path on the erlbutt node's machine and must not exist yet.
+The bundle can be loaded into another node with `ssb-import'.  This
+runs on the node and replies when it has finished; for a very large
+export, `sbutt export' avoids going through the node at all."
+  (interactive
+   (list (read-file-name "Export to new directory (on the node): "
+                         nil nil nil
+                         (format-time-string "ssb-export-%Y%m%d"))))
+  (message "Exporting to %s..." (expand-file-name dir))
+  (erl-rpc #'ssb--show-transfer-result
+           nil ssb-node 'maxbutt 'export
+           (list (erl-binary (expand-file-name dir)))))
+
+;;;###autoload
+(defun ssb-import (dir)
+  "Verify the bundle in DIR and load what is new into the erlbutt node.
+DIR is a directory written by `ssb-export' or `sbutt export', on the
+node's machine.  Every message and blob is checked before anything is
+stored; a feed that conflicts with the copy already held is reported
+as a FORK and left alone."
+  (interactive
+   (list (read-directory-name "Import bundle (on the node): " nil nil t)))
+  (message "Importing %s..." (expand-file-name dir))
+  (erl-rpc #'ssb--show-transfer-result
+           nil ssb-node 'maxbutt 'import
+           (list (erl-binary (directory-file-name (expand-file-name dir))))))
+
+(defun ssb--show-transfer-result (reply)
+  "Show REPLY from maxbutt:export/1 or import/1.
+A one-line summary goes to the echo area; a longer one (per-feed
+problems) to the *ssb-transfer* buffer."
+  (if (ssb--error-p reply)
+      (message "Failed: %s" (elt reply 1))
+    (display-message-or-buffer (elt reply 1) "*ssb-transfer*")))
 
 ;;; Major mode
 
