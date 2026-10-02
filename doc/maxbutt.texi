@@ -57,6 +57,7 @@ Commands
 * Thread Tracing::              Following tangle threads.
 * Publishing::                  Writing posts, replies, and votes.
 * Social Actions::              Following, unfollowing, and blocking feeds.
+* Export and Import::           Moving a feed and its blobs between nodes.
 
 Customization
 
@@ -107,6 +108,7 @@ Some background on Maxbutt, why we decided to build it, and what we hope to achi
 * Thread Tracing::
 * Publishing::
 * Social Actions::
+* Export and Import::
 @end menu
 
 @node Browsing Feeds, Thread Tracing, Commands, Commands
@@ -280,7 +282,7 @@ On success the published message key is shown in the minibuffer.
 Discard the buffer without sending.
 @end table
 
-@node Social Actions, , Publishing, Commands
+@node Social Actions, Export and Import, Publishing, Commands
 @section Social Actions
 
 These commands publish SSB @code{contact} messages expressing your
@@ -330,6 +332,42 @@ Unfollow the feed at point.
 @item B
 Block the feed at point (asks for confirmation).
 @end table
+@end deffn
+
+@node Export and Import, , Social Actions, Commands
+@section Export and Import
+
+A feed, and every blob its messages reference, can be written out as a
+self-contained directory --- a @dfn{bundle} --- and loaded into another
+node.  The bundle holds the signed messages exactly as they were
+signed, a manifest, and an @file{index.html} preview that can be read
+without any SSB software.  The format and the checks are described in
+erlbutt's @file{doc/ops/export-import.md}.
+
+Both commands go through erlbutt's owner-only admin namespace, the
+same handlers @command{sbutt export} and @command{sbutt import} use.
+The directory is a path on the @emph{node's} machine, which is the
+same machine unless you are connected to a remote node.  Both reply
+when they have finished: a one-line result appears in the echo area,
+and anything longer (a feed that was refused, say) in the
+@file{*ssb-transfer*} buffer.
+
+@deffn Command ssb-export dir
+Export your own feed and its blobs into @var{dir}, which must not
+exist yet.  A feed is exported only if the node holds it from its first
+message as one unbroken chain.  Private messages stay encrypted.  For
+a very large export, @command{sbutt export} is better: it reads the
+store directly instead of going through the node.
+@end deffn
+
+@deffn Command ssb-import dir
+Verify the bundle in @var{dir} and store whatever is new.  Every
+message's signature, id and place in its feed's chain is checked, and
+every blob's hash.  A feed whose history differs from the copy the node
+already holds is reported as a @strong{FORK} and left untouched.  Each
+feed's result is one of @code{imported}, @code{up_to_date},
+@code{stopped} (the messages before a bad one were stored) or
+@code{refused} (nothing stored).
 @end deffn
 
 @node Customization, , Commands, Top
