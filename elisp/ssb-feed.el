@@ -165,7 +165,7 @@ nil for the local node's own."
             (let* ((id    (elt entry 0))
                    (name  (elt entry 1))
                    (label (if (and (stringp name) (not (string= name "")))
-                              (decode-coding-string name 'utf-8 t)
+                              name
                             ""))
                    (start (point)))
               (insert (format "%-24s %s\n" label id))
@@ -266,7 +266,7 @@ LIMIT is remembered buffer-locally so `ssb-refresh-feed' can refetch."
               (goto-char (point-min))
               (when (re-search-forward "^Feed: " nil t)
                 (end-of-line)
-                (insert (format "  [%s]" (decode-coding-string name 'utf-8 t)))))))))))
+                (insert (format "  [%s]" name))))))))))
 
 (defun ssb--author-at-point ()
   "Author id of the entry on the current line, or nil.
@@ -389,7 +389,7 @@ ROOT-KEY is the tangle root, stored so sub-thread navigation works."
          (name     (when has-name (elt entry 2)))
          (depth    (if has-name (elt entry 3) (elt entry 2)))
          (label    (if (and (stringp name) (not (string= name "")))
-                       (decode-coding-string name 'utf-8 t)
+                       name
                      (ssb--short-id author)))
          (indent (make-string (* depth 2) ?\s))
          (start  (point)))

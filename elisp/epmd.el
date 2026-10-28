@@ -6,6 +6,9 @@
 
 (defvar epmd-port 4369)
 
+(defvar-local epmd--node nil
+  "The node name the port request in this FSM's buffer asked for.")
+
 (defun epmd-process (event arg)
   (fsm-check-event event 'init)
   ;; Arg is the request
@@ -16,7 +19,8 @@
                              arg)))
   (cl-ecase (elt arg 0)
     ((?n) (fsm-change-state #'epmd-recv-names-resp))
-    ((?z) (fsm-change-state #'epmd-recv-port-resp))
+    ((?z) (setq epmd--node (substring arg 1))
+          (fsm-change-state #'epmd-recv-port-resp))
     ((?a) (fsm-change-state #'epmd-recv-alive-resp))))
 
 (defun epmd-recv-names-resp (event data)
@@ -25,17 +29,28 @@
   (cl-assert (>= (length data) 4))
   (fsm-terminate (substring arg 4)))
 
+;; PORT2_RESP: ?w, a result byte, then — only when the result is 0 — the
+;; node's port in two bytes, and more we do not need.  A non-zero result
+;; is epmd saying it has no node by that name, which is the usual way a
+;; connection fails (the node is down, or the name is wrong), so it is
+;; said in words rather than left to an assertion.
 (defun epmd-recv-port-resp (event data)
-  (declare (special arg))
-  (message "Event: %s" event)
-  (message "data: %s" data)
-  (message "arg: %s" arg)
   (cl-ecase event
     ((data)
-     (cl-assert (> (length arg) 2))
-     (cl-assert (= 119 (elt data 0)))
-     (fsm-terminate (+ (ash    (elt arg 2) 8)
-                       (logand (elt arg 3) 255))))
+     (cond ((or (< (length data) 2) (/= (elt data 0) ?w))
+            (message "epmd: unexpected reply to a port request for %s: %S"
+                     epmd--node data)
+            (fsm-fail 'bad-reply))
+           ((/= (elt data 1) 0)
+            (message "epmd: no node named %s is registered there; is it running, under that name?"
+                     epmd--node)
+            (fsm-fail 'no-such-node))
+           ((< (length data) 4)
+            (message "epmd: short reply to a port request for %s: %S" epmd--node data)
+            (fsm-fail 'short-reply))
+           (t
+            (fsm-terminate (+ (ash    (elt data 2) 8)
+                              (logand (elt data 3) 255))))))
     ((closed)
      (fsm-fail))))
 

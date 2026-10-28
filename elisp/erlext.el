@@ -38,6 +38,8 @@
 ;; old networking code.
 
 
+(require 'cl-lib)
+
 ;; type tags
 
 (defconst erlext-tag-alist
@@ -321,16 +323,25 @@
     (progn (erlext-write-list-head (length lst))
            (mapc 'erlext-write-obj lst)
            (erlext-write-null))))
+;; An Erlang string is a list of code points.  STRING_EXT carries one in
+;; bytes when every code point fits in one (and there are fewer than 65536);
+;; anything else goes as an ordinary list of integers.
 (defun erlext-write-string (str)
   (cl-assert (stringp str))
-  (erlext-write1 (erlext-get-code 'string))
-  (erlext-write2 (length str))
-  (erlext-writen str))
+  (if (and (< (length str) 65536) (cl-every (lambda (c) (< c 256)) str))
+      (let ((bytes (encode-coding-string str 'latin-1 t)))
+        (erlext-write1 (erlext-get-code 'string))
+        (erlext-write2 (length bytes))
+        (erlext-writen bytes))
+    (erlext-write-list (string-to-list str))))
+;; A multibyte string goes as its UTF-8 bytes, and the length written is
+;; the byte count: `length' of a multibyte string counts characters.
 (defun erlext-write-binary (str)
   (cl-assert (stringp str))
-  (erlext-write1 (erlext-get-code 'bin))
-  (erlext-write4 (length str))
-  (erlext-writen str))
+  (let ((bytes (if (multibyte-string-p str) (encode-coding-string str 'utf-8 t) str)))
+    (erlext-write1 (erlext-get-code 'bin))
+    (erlext-write4 (length bytes))
+    (erlext-writen bytes)))
 (defun erlext-write-null ()
   (erlext-write1 (erlext-get-code 'null)))
 (defun erlext-write-list-head (arity)
@@ -405,8 +416,8 @@
       ((int)        (erlext-read4))
       ((newFloat)   (erlext-read-ieee-double))
       ((float)      (erlext-read-float))
-      ((atom)       (erlext-read-atom))
-      ((atom_utf8)  (erlext-read-atom))
+      ((atom)       (erlext-read-atom 'latin-1))
+      ((atom_utf8)  (erlext-read-atom 'utf-8))
       ((smallAtom_utf8)  (erlext-read-small-atom))
       ((smallTuple) (erlext-read-small-tuple))
       ((largeTuple) (erlext-read-large-tuple))
@@ -457,13 +468,12 @@
   (cl-assert (integerp n))
   (let ((start (point))
         (end   (+ (point) n)))
-    (prog1 (let ((string (buffer-substring start end)))
-             (if (featurep 'xemacs)
-                 string
-               (encode-coding-string string last-coding-system-used))) ; fixme: should be
-                                            ; string-make-unibyte?
-                                            ; Why is it necessary
-                                            ; anyhow?
+    ;; The buffer is unibyte, so this is the bytes themselves.  It used to
+    ;; be run through `encode-coding-string' with whatever
+    ;; `last-coding-system-used' happened to be, which turned non-ASCII
+    ;; text into a string of byte-valued characters that no later decode
+    ;; could repair.  Decoding is now each reader's job, by its type.
+    (prog1 (buffer-substring-no-properties start end)
       (goto-char end))))
 
 ;; Test:
@@ -501,12 +511,12 @@
 (defun erlext-read-float ()
   (string-to-number (erlext-readn 31)))
 
-(defun erlext-read-atom ()
+(defun erlext-read-atom (coding)
   (let ((length (erlext-read2)))
-    (intern (erlext-readn length))))
+    (intern (decode-coding-string (erlext-readn length) coding t))))
 (defun erlext-read-small-atom ()
   (let ((length (erlext-read1)))
-    (intern (erlext-readn length))))
+    (intern (decode-coding-string (erlext-readn length) 'utf-8 t))))
 (defun erlext-read-small-tuple ()
   (erlext-read-tuple (erlext-read1)))
 (defun erlext-read-large-tuple ()
@@ -523,11 +533,16 @@
   (apply #'vector (cl-loop for x from 1 to arity
                         collect (erlext-read-obj))))
 
+;; STRING_EXT is a list of integers 0-255, one byte each: Latin-1.
 (defun erlext-read-string ()
-  (erlext-readn (erlext-read2)))
+  (decode-coding-string (erlext-readn (erlext-read2)) 'latin-1 t))
 
+;; A binary is taken to be UTF-8 text, which every binary Distel and
+;; maxbutt exchange is.  Bytes that are not valid UTF-8 decode to raw-byte
+;; characters, which `erlext-write-binary' encodes back to the same bytes,
+;; so other binaries still survive a round trip.
 (defun erlext-read-binary ()
-  (erlext-readn (erlext-read4)))
+  (decode-coding-string (erlext-readn (erlext-read4)) 'utf-8 t))
 
 (defun erlext-read-newref ()
   (let* ((len (erlext-read2))
@@ -584,6 +599,20 @@ it and making sure that it's unchanged."
   (interactive)
   (mapc #'erlext-test-case erlext-test-cases)
   (message "Smooth sailing"))
+
+(defvar erlext-text-test-cases
+  '("plain" "café ✓" "naïve — “quoted”" "" "日本語")
+  "Strings that must survive as binaries and as Erlang strings.")
+
+(defun erlext-test-text ()
+  "Round-trip non-ASCII text through binaries, strings and atoms."
+  (interactive)
+  (dolist (s erlext-text-test-cases)
+    (cl-assert (equal s (erlext-binary-to-term (erlext-term-to-binary (vector erl-tag (quote erl-binary) s)))))
+    ;; a string of code points over 255 comes back as the list it went as
+    (cl-assert (equal s (let ((v (erlext-binary-to-term (erlext-term-to-binary s))))
+                          (if (listp v) (apply #'string v) v)))))
+  (message "Text round-trips"))
 
 (defun erlext-test-case (term)
   (condition-case x
